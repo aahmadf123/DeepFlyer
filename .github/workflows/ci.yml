@@ -1,0 +1,67 @@
+name: CI
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint_and_test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, 3.10, 3.11]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install poetry
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-ansi
+
+      - name: Lint with flake8
+        run: |
+          poetry run flake8 rl_agent api tests
+
+      - name: Run tests
+        run: |
+          poetry run pytest --maxfail=1 --disable-warnings -q
+
+  smoke_train:
+    name: Smoke Training Job
+    needs: lint_and_test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.10
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install poetry
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-ansi
+
+      - name: Smoke test training loop
+        run: |
+          # run a single-episode training to verify end-to-end setup
+          poetry run python -u -m rl_agent.train \
+            --preset_id reach_target \
+            --hyperparameters '{"learning_rate":0.0003,"gamma":0.99,"entropy_coef":0.01}' \
+            --reward_weights '{"distance":1.0,"collision":10.0,"smoothness":0.3,"energy":0.2}' \
+            --max_episodes 1 \
+            --max_steps_per_episode 1
