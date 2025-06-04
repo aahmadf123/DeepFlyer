@@ -1,66 +1,106 @@
 # rl_agent/trpo.py
 """
 Trust Region Policy Optimization (TRPO) algorithm implementation for Researcher mode.
-TRPO ensures policy updates satisfy a KL-divergence constraint for guaranteed
-monotonic improvement in continuous control tasks.
+This module wraps SB3-contrib's TRPO and integrates custom reward functions and logging.
 """
-
-import torch
-import torch.nn as nn
+import os
+from pathlib import Path
 from typing import Callable, Dict
+
+from sb3_contrib import TRPO
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.logger import configure
+
+from rl_agent.env.wrappers import CustomRewardWrapper
+from rl_agent.logger import JSONLinesLogger
+
+class _LoggerCallback(BaseCallback):
+    """Callback for logging training metrics to JSON lines."""
+    def __init__(self, logger: JSONLinesLogger, verbose: int = 0):
+        super().__init__(verbose)
+        self.logger = logger
+
+    def _on_step(self) -> bool:
+        if len(self.locals.get('infos', [])) > 0:
+            for info in self.locals['infos']:
+                ep_info = info.get('episode')
+                if ep_info:
+                    self.logger.log({
+                        'episode_reward': ep_info.get('r'),
+                        'episode_length': ep_info.get('l'),
+                        'timesteps': self.num_timesteps
+                    })
+        return True
 
 class TRPOAgent:
     """
-    TRPOAgent implements the TRPO algorithm:
-    - Uses conjugate gradient to solve the constrained optimization.
-    - Enforces KL-divergence trust region via a line search.
+    TRPOAgent implements Trust Region Policy Optimization.
+    Researcher mode: on-policy algorithm with KL constraint.
     """
-
     def __init__(self, env, reward_fn: Callable, hyperparams: Dict[str, float]):
         """
-        Initialize TRPO agent.
+        Initialize the TRPO agent.
 
         Args:
-            env: Gym-style environment.
-            reward_fn: Callable reward function.
-            hyperparams: Contains keys such as:
-                - max_kl (maximum KL divergence)
-                - cg_iterations (conjugate gradient steps)
+            env: Gymnasium environment instance.
+            reward_fn: Callable(state, action) -> float for custom reward.
+            hyperparams: Dict of TRPO hyperparameters, e.g.:
+                - max_kl
+                - cg_iterations
                 - cg_damping
-                - gamma (discount factor)
-                - lam (GAE lambda)
+                - gamma
+                - gae_lambda
         """
-        self.env = env
-        self.reward_fn = reward_fn
-        self.hp = hyperparams
+        self.env = CustomRewardWrapper(env, reward_fn)
+        # Map hyperparams to SB3 args
+        sb3_kwargs = {
+            'max_kl': hyperparams.get('max_kl', 0.01),
+            'cg_iters': int(hyperparams.get('cg_iterations', 10)),
+            'cg_damping': hyperparams.get('cg_damping', 0.1),
+            'gamma': hyperparams.get('gamma', 0.99),
+            'gae_lambda': hyperparams.get('gae_lambda', 0.95),
+            'verbose': 0,
+        }
+        # Create TRPO model
+        self.model = TRPO(
+            policy='MlpPolicy',
+            env=self.env,
+            **sb3_kwargs
+        )
 
-        # TODO: Initialize policy and value networks
-        # self.policy_net = ...
-        # self.value_net = ...
-
-    def train(self):
+    def train(self, total_timesteps: int, log_dir: str):
         """
         Run the TRPO training loop.
 
-        Steps:
-            1. Collect rollouts using current policy.
-            2. Estimate advantages using GAE (Generalized Advantage Estimation).
-            3. Compute policy gradient.
-            4. Use conjugate gradient to compute step direction.
-            5. Perform line search to satisfy KL constraint.
-            6. Update the value function via regression.
-            7. Log metrics (surrogate loss, KL divergence) via logger.
+        Args:
+            total_timesteps: Total timesteps to collect (approx episodes*steps).
+            log_dir: Directory to write JSON logs.
         """
-        raise NotImplementedError
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
+        log_path = Path(log_dir) / 'trpo_metrics.jsonl'
+        json_logger = JSONLinesLogger(log_path)
+
+        tmp_logger = configure(str(log_dir), ['stdout'])
+        self.model.set_logger(tmp_logger)
+
+        callback = _LoggerCallback(json_logger)
+        self.model.learn(total_timesteps=total_timesteps, callback=callback)
 
     def save(self, filepath: str):
         """
-        Save policy and value networks to disk.
+        Save the trained TRPO model to disk.
+
+        Args:
+            filepath: Path prefix (appends .zip).
         """
-        raise NotImplementedError
+        self.model.save(filepath)
 
     def load(self, filepath: str):
         """
-        Load policy and value networks from disk.
+        Load a trained TRPO model from disk.
+
+        Args:
+            filepath: Path prefix where model (.zip) was saved.
         """
-        raise NotImplementedError 
+        self.model = TRPO.load(filepath, env=self.env)
+        return self.model 

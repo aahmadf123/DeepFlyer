@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "deepflyer"
+version = "0.1.0"
+description = "DeepFlyer RL & AI modules"
+authors = ["DeepFlyer Team <team@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+stable-baselines3 = "^2.2.1"
+gymnasium = "^0.29.0"
+numpy = "^1.26"
+torch = "^2.2"
+fastapi = "^0.111.0"
+uvicorn = "^0.29.0"
+pydantic = "^2.7"
+torchcam = "^0.3.2"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

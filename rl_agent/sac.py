@@ -1,18 +1,41 @@
 # rl_agent/sac.py
 """
 Soft Actor-Critic (SAC) algorithm implementation for Explorer mode.
-This module provides a SACAgent class with stubs for initialization, training,
-model save/load, and key hyperparameters suitable for continuous control tasks.
+This module wraps SB3's SAC and integrates custom reward functions and logging.
 """
-
-import torch
-import torch.nn as nn
+import os
+from pathlib import Path
 from typing import Callable, Dict
+
+from stable_baselines3 import SAC
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.logger import configure
+
+from rl_agent.env.wrappers import CustomRewardWrapper
+from rl_agent.logger import JSONLinesLogger
+
+class _LoggerCallback(BaseCallback):
+    """Callback for logging training metrics to JSON lines."""
+    def __init__(self, logger: JSONLinesLogger, verbose: int = 0):
+        super().__init__(verbose)
+        self.logger = logger
+
+    def _on_step(self) -> bool:
+        if len(self.locals.get('infos', [])) > 0:
+            for info in self.locals['infos']:
+                ep_info = info.get('episode')
+                if ep_info:
+                    self.logger.log({
+                        'episode_reward': ep_info.get('r'),
+                        'episode_length': ep_info.get('l'),
+                        'timesteps': self.num_timesteps
+                    })
+        return True
 
 class SACAgent:
     """
     SACAgent implements the Soft Actor-Critic algorithm.
-    Explorer mode: off-policy, sample-efficient, with entropy regularization.
+    Explorer mode: off-policy learning with custom rewards.
     """
 
     def __init__(self, env, reward_fn: Callable, hyperparams: Dict[str, float]):
@@ -20,50 +43,68 @@ class SACAgent:
         Initialize the SAC agent.
 
         Args:
-            env: Gym-style environment with continuous action space.
+            env: Gymnasium environment instance.
             reward_fn: Callable(state, action) -> float for custom reward.
             hyperparams: Dict of SAC hyperparameters, e.g.:
                 - learning_rate
-                - gamma (discount factor)
-                - alpha (entropy coefficient)
-                - tau (target smoothing coefficient)
-                - buffer_size (replay buffer)
+                - gamma
+                - entropy_coef (alpha)
+                - tau
+                - buffer_size
                 - batch_size
         """
-        self.env = env
-        self.reward_fn = reward_fn
-        self.hyperparams = hyperparams
+        # Wrap environment for custom reward
+        self.env = CustomRewardWrapper(env, reward_fn)
 
-        # TODO: Initialize actor, critic, and target networks
-        # self.actor = ...
-        # self.critic_1 = ...
-        # self.critic_2 = ...
-        # self.target_critic_1 = ...
-        # self.target_critic_2 = ...
-        # self.log_alpha = torch.tensor([hyperparams['init_alpha']], requires_grad=True)
+        # Map hyperparams to SB3 args
+        sb3_kwargs = {
+            'learning_rate': hyperparams.get('learning_rate', 3e-4),
+            'gamma': hyperparams.get('gamma', 0.99),
+            'ent_coef': hyperparams.get('entropy_coef', 0.01),
+            'tau': hyperparams.get('tau', 0.005),
+            'buffer_size': int(hyperparams.get('buffer_size', 1000000)),
+            'batch_size': int(hyperparams.get('batch_size', 256)),
+            'verbose': 0,
+        }
+        self.model = SAC(
+            policy='MlpPolicy',
+            env=self.env,
+            **sb3_kwargs
+        )
 
-    def train(self):
+    def train(self, total_timesteps: int, log_dir: str):
         """
         Run the SAC training loop.
 
-        Steps:
-            1. Sample a batch of transitions from replay buffer.
-            2. Update critics with TD targets and clipped double Q-learning.
-            3. Update actor to maximize expected Q + entropy bonus.
-            4. Adjust entropy coefficient alpha via dual gradient descent.
-            5. Soft-update target networks.
-            6. Log metrics (Q-values, policy loss, alpha) via logger.
+        Args:
+            total_timesteps: Total timesteps to train.
+            log_dir: Directory to write JSON logs.
         """
-        raise NotImplementedError
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
+        log_path = Path(log_dir) / 'sac_metrics.jsonl'
+        json_logger = JSONLinesLogger(log_path)
+
+        tmp_logger = configure(str(log_dir), ['stdout'])
+        self.model.set_logger(tmp_logger)
+
+        callback = _LoggerCallback(json_logger)
+        self.model.learn(total_timesteps=total_timesteps, callback=callback)
 
     def save(self, filepath: str):
         """
-        Save all SAC networks and alpha to disk.
+        Save the trained SAC model to disk.
+
+        Args:
+            filepath: Path prefix (appends .zip).
         """
-        raise NotImplementedError
+        self.model.save(filepath)
 
     def load(self, filepath: str):
         """
-        Load saved SAC networks and alpha from disk.
+        Load a trained SAC model from disk.
+
+        Args:
+            filepath: Path prefix where model (.zip) was saved.
         """
-        raise NotImplementedError 
+        self.model = SAC.load(filepath, env=self.env)
+        return self.model 
