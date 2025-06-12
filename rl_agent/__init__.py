@@ -1,11 +1,17 @@
-from rl_agent.ppo import PPOAgent
-from rl_agent.sac import SACAgent
-from rl_agent.td3 import TD3Agent
-from rl_agent.trpo import TRPOAgent
+"""
+DeepFlyer RL Agent Package.
+"""
 
-ALGO_MAP = {
-    'ppo': PPOAgent,
-    'sac': SACAgent,
-    'td3': TD3Agent,
-    'trpo': TRPOAgent,
-}
+from rl_agent.supervisor_agent import SupervisorAgent
+from rl_agent.pid_controller import PIDController
+from rl_agent.error_calculator import ErrorCalculator
+from rl_agent.reward_function import RewardFunction
+from rl_agent.env.supervisor_env import SupervisorEnv
+
+__all__ = [
+    "SupervisorAgent",
+    "PIDController",
+    "ErrorCalculator",
+    "RewardFunction",
+    "SupervisorEnv"
+]

@@ -1,108 +1,73 @@
-# DeepFlyer
+# DeepFlyer - RL as Supervisor for PID Control
 
-DeepFlyer is an educational platform for learning reinforcement learning with drones, inspired by AWS DeepRacer but extending into 3D aerial environments. The platform is designed to support two distinct user modes - Explorer (beginners) and Researcher (advanced) - to accommodate users across a wide range of technical abilities and ages.
+This project implements a reinforcement learning (RL) agent that acts as a supervisor for a PID controller, adjusting PID gains to improve path following performance for a drone.
 
 ## Overview
 
-DeepFlyer provides a comprehensive platform for:
-- Learning reinforcement learning concepts with drones
-- Testing algorithms in both simulated and real-world environments
-- Progressive learning from basic to advanced drone control
-- Integration with ROS and MAVROS for UAV control
+The RL agent observes the drone's state (position, velocity, orientation) and path following errors (cross-track and heading errors), and outputs PID gain adjustments. The PID controller then uses these gains to compute velocity commands for the drone.
 
 ## Architecture
 
-The platform consists of several key components:
+The project consists of the following components:
 
-- **RL Agent**: Reinforcement learning algorithms and models
-- **Environment**: Gymnasium-compatible environments for training
-- **ROS Integration**: Interface with Robot Operating System
-- **MAVROS Support**: Control of PX4-based flight controllers
-- **ZED Camera Integration**: Stereo vision for depth perception
+1. **PID Controller**: Computes velocity commands based on cross-track and heading errors.
+2. **Error Calculator**: Computes cross-track and heading errors for path following.
+3. **RL Supervisor**: Observes the state and errors, and outputs PID gain adjustments.
+4. **Reward Function**: Computes rewards based on errors and control effort.
+5. **ROS2 Node**: Integrates with PX4 for real-world deployment.
+6. **Training Environment**: Simulates a drone following a path for training the RL agent.
 
-## User Modes
-
-### Explorer Mode (Ages 11-22)
-- Simplified interface for beginners
-- Basic flight controls and navigation tasks
-- Restricted flight envelope for safety
-- Focused on core RL concepts
-
-### Researcher Mode
-- Advanced interface for university students and researchers
-- Full access to all system capabilities
-- Custom algorithm implementation
-- Extended sensor data and control options
-
-## ROS / MAVROS Integration
-
-DeepFlyer includes robust integration with ROS and MAVROS to control real drones:
-
-- **ROS Environment**: Full Gymnasium-compatible environment
-- **MAVROS Interface**: Control of PX4-based flight controllers
-- **Mock Implementation**: Development without physical hardware
-- **ZED Camera Support**: Stereo vision for depth perception and obstacle avoidance
-
-### Supported Hardware
-
-- **Flight Controller**: Pixhawk 6c with PX4 firmware
-- **Drone Frame**: Holybro S500 or similar
-- **Camera**: ZED Mini stereo camera
-- **Companion Computer**: Raspberry Pi 4B
-- **Communications**: Telemetry radio for monitoring
-
-### Environment Classes
-
-- `RosEnv`: Base environment with ROS integration
-- `MAVROSEnv`: Environment specialized for MAVROS/PX4 control
-- `MAVROSExplorerEnv`: Simplified environment for beginners
-- `MAVROSResearcherEnv`: Full-featured environment for advanced users
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.8+
-- ROS2 (optional for simulation)
-- MAVROS (optional for real drone control)
-- ZED SDK (optional for ZED camera support)
-
-### Installation
+## Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/deepflyer.git
-cd deepflyer
+git clone https://github.com/yourusername/DeepFlyer.git
+cd DeepFlyer
 
 # Install dependencies
-pip install -e .
+pip install -r requirements.txt
 ```
 
-### Testing the Environment
+## Usage
+
+### Training the RL Supervisor
 
 ```bash
-# Test with mock implementation (no ROS required)
-python scripts/test_mavros_env.py --mode explorer
-
-# Test with real ROS/MAVROS (if installed)
-python scripts/test_mavros_env.py --mode researcher
-
-# Test all functions
-python scripts/test_mavros_env.py --mode all
+python scripts/train_supervisor.py --timesteps 100000 --with-disturbance
 ```
 
-## Development
+### Running the ROS2 Node
 
-DeepFlyer is designed to be extensible, allowing for various reinforcement learning algorithms to be implemented and tested. The project follows a modular architecture where components can be replaced or extended.
+```bash
+ros2 run deepflyer rl_pid_node
+```
 
-### Adding New Algorithms
+## Components
 
-New reinforcement learning algorithms can be added in the `rl_agent/models` directory.
+### PID Controller
 
-### Customizing Environments
+The PID controller computes velocity commands based on cross-track and heading errors, using gains adjusted by the RL agent.
 
-Custom environments can be created by extending the base environments in `rl_agent/env`.
+### Error Calculator
+
+The error calculator computes cross-track and heading errors for path following, based on the drone's position, orientation, and the desired path.
+
+### RL Supervisor
+
+The RL supervisor observes the drone's state and path following errors, and outputs PID gain adjustments to improve performance.
+
+### Reward Function
+
+The reward function computes rewards based on cross-track error, heading error, and control effort, encouraging the RL agent to minimize errors while avoiding excessive control changes.
+
+### ROS2 Node
+
+The ROS2 node subscribes to position, velocity, and orientation topics from MAVROS, computes errors, and publishes velocity commands to control the drone.
+
+### Training Environment
+
+The training environment simulates a drone following a path, with optional wind disturbances, for training the RL agent.
 
 ## License
 
-[License information]
+This project is licensed under the MIT License - see the LICENSE file for details.
