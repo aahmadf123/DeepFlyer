@@ -1,0 +1,49 @@
++-------------------+          +----------------------------+
+|                   |          |                            |
+| PX4 Flight Control|<-------->| ROS2 / MAVROS Interface    |
+|                   |          |                            |
++-------------------+          +-------------^--------------+
+        ^                                    |
+        |                                    |
+        | Wind Disturbance                   |
+        v                                    |
++-------------------+          +-------------v--------------+
+|                   |          |                            |
+| Physical Drone    |<---------| Velocity Commands          |
+|                   |          |                            |
++-------------------+          +----------------------------+
+                                            ^
+                                            |
+                               +------------+-------------+
+                               |                          |
+                               | PID Controller           |
+                               |                          |
+                               +-----------^-+------------+
+                                           | |
+                       +-----------------+ | +----------------+
+                       |                 | | |                |
+                       | PID Parameters  | | | Error Signals  |
+                       |                 | | |                |
+                       +-----------------+ | +----------------+
+                                   ^       |        ^
+                                   |       |        |
+                        +----------+-+   +-+--------+--------+
+                        |            |   |                   |
+                        | RL Agent   |<->| Error Calculator  |
+                        |            |   |                   |
+                        +------------+   +-------------------+
+
++----------------------------------------------------------------------+
+| Legend                                                                |
++----------------------------------------------------------------------+
+| -> Data Flow                                                          |
+| <-> Bidirectional Data Flow                                          |
++----------------------------------------------------------------------+
+| Components:                                                           |
+| - PX4 Flight Control: Low-level flight controller                     |
+| - MAVROS Interface: Handles ROS2 communication with PX4              |
+| - Error Calculator: Computes cross-track and heading errors           |
+| - RL Agent: Tunes PID gains based on state observations               |
+| - PID Controller: Computes velocity commands using tuned gains        |
+| - Physical Drone: The actual drone executing commands                 |
++----------------------------------------------------------------------+ 

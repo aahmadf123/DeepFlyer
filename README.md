@@ -1,73 +1,117 @@
-# DeepFlyer - RL as Supervisor for PID Control
+# DeepFlyer
 
-This project implements a reinforcement learning (RL) agent that acts as a supervisor for a PID controller, adjusting PID gains to improve path following performance for a drone.
+DeepFlyer is a deep reinforcement learning framework for autonomous drone control and navigation.
 
 ## Overview
 
-The RL agent observes the drone's state (position, velocity, orientation) and path following errors (cross-track and heading errors), and outputs PID gain adjustments. The PID controller then uses these gains to compute velocity commands for the drone.
+DeepFlyer combines classical control methods with deep reinforcement learning to create robust and efficient flight controllers for UAVs. The framework leverages the P3O (Procrastinated Policy-based Observer) algorithm for tuning PID controllers in real-time, providing improved adaptability and performance over traditional fixed-gain controllers.
 
-## Architecture
+## Key Features
 
-The project consists of the following components:
+- P3O-based adaptive PID gain tuning
+- Seamless integration with ROS2 and MAVROS
+- ZED camera integration for visual perception
+- Path planning and obstacle avoidance
 
-1. **PID Controller**: Computes velocity commands based on cross-track and heading errors.
-2. **Error Calculator**: Computes cross-track and heading errors for path following.
-3. **RL Supervisor**: Observes the state and errors, and outputs PID gain adjustments.
-4. **Reward Function**: Computes rewards based on errors and control effort.
-5. **ROS2 Node**: Integrates with PX4 for real-world deployment.
-6. **Training Environment**: Simulates a drone following a path for training the RL agent.
+## P3O Algorithm
+
+The project implements the P3O algorithm, which combines the advantages of on-policy (PPO) and off-policy (SAC) learning methods. Key features of P3O include:
+
+- **Procrastinated Updates**: Postpones on-policy updates to improve sample efficiency
+- **Blended Learning**: Combines on-policy and off-policy gradients for better stability
+- **Adaptive Exploration**: Uses entropy regularization to maintain appropriate exploration
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/DeepFlyer.git
-cd DeepFlyer
+### Prerequisites
 
-# Install dependencies
+- ROS2 (Rolling or Humble)
+- Python 3.8 or later
+- NVIDIA GPU recommended for training
+
+### Setup
+
+1. Create a ROS2 workspace and clone this repository:
+
+```bash
+mkdir -p ~/deepflyer_ws/src
+cd ~/deepflyer_ws/src
+git clone https://github.com/your-username/DeepFlyer.git
+```
+
+2. Install Python dependencies:
+
+```bash
+cd DeepFlyer
 pip install -r requirements.txt
+```
+
+3. Build the ROS2 workspace:
+
+```bash
+cd ~/deepflyer_ws
+colcon build
+source install/setup.bash
 ```
 
 ## Usage
 
-### Training the RL Supervisor
+### Training a P3O agent
 
 ```bash
-python scripts/train_supervisor.py --timesteps 100000 --with-disturbance
+cd ~/deepflyer_ws
+source install/setup.bash
+ros2 run deepflyer scripts/test_rl_supervisor.py --train --collect_time 300 --save_model ./models/p3o_agent.pt
 ```
 
-### Running the ROS2 Node
+### Testing a trained agent
 
 ```bash
-ros2 run deepflyer rl_pid_node
+cd ~/deepflyer_ws
+source install/setup.bash
+ros2 run deepflyer scripts/test_rl_supervisor.py --test --test_time 120 --load_model ./models/p3o_agent.pt
 ```
 
-## Components
+### Advanced parameters
 
-### PID Controller
+The P3O implementation provides several hyperparameters to customize the learning behavior:
 
-The PID controller computes velocity commands based on cross-track and heading errors, using gains adjusted by the RL agent.
+- `--procrastination_factor`: Controls how often on-policy updates occur (default: 0.95)
+- `--alpha`: Blend factor between on-policy and off-policy learning (default: 0.2)
+- `--entropy_coef`: Entropy regularization coefficient (default: 0.01)
+- `--batch_size`: Batch size for learning updates (default: 256)
+- `--learn_interval`: Time between learning updates in seconds (default: 1.0)
 
-### Error Calculator
+## Project Structure
 
-The error calculator computes cross-track and heading errors for path following, based on the drone's position, orientation, and the desired path.
+- `rl_agent/`: Reinforcement learning algorithms and models
+  - `env/`: Environment interfaces for MAVROS and ZED camera
+  - `models/`: Neural network architectures
+  - `supervisor_agent.py`: P3O implementation for PID tuning
+- `api/`: REST API for remote monitoring and control
+- `config/`: Configuration files for MAVROS and ZED camera
+- `scripts/`: Utility scripts for training and deployment
+- `tests/`: Unit and integration tests
 
-### RL Supervisor
+## Contributing
 
-The RL supervisor observes the drone's state and path following errors, and outputs PID gain adjustments to improve performance.
-
-### Reward Function
-
-The reward function computes rewards based on cross-track error, heading error, and control effort, encouraging the RL agent to minimize errors while avoiding excessive control changes.
-
-### ROS2 Node
-
-The ROS2 node subscribes to position, velocity, and orientation topics from MAVROS, computes errors, and publishes velocity commands to control the drone.
-
-### Training Environment
-
-The training environment simulates a drone following a path, with optional wind disturbances, for training the RL agent.
+Contributions to DeepFlyer are welcome! Please feel free to submit pull requests or open issues to improve the framework.
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Citation
+
+If you use DeepFlyer in your research, please cite:
+
+```
+@misc{deepflyer2023,
+  author = {DeepFlyer Team},
+  title = {DeepFlyer: Deep Reinforcement Learning for Autonomous UAV Control},
+  year = {2023},
+  publisher = {GitHub},
+  journal = {GitHub Repository},
+  howpublished = {\url{https://github.com/your-username/DeepFlyer}}
+}
+```
