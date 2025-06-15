@@ -1,7 +1,5 @@
 """
-Neural network for the RL supervisor.
-
-This module provides the policy network for the P3O-based RL supervisor.
+Neural network for direct drone control.
 """
 
 import torch
@@ -10,27 +8,23 @@ import torch.nn.functional as F
 from typing import Tuple
 
 
-class SupervisorNetwork(nn.Module):
-    """
-    Neural network for the RL supervisor.
-    
-    This class implements a stochastic policy network that outputs PID gains
-    and supports P3O algorithm by providing log probabilities, entropy, and
-    other necessary components for both on-policy and off-policy learning.
-    """
+class DirectControlNetwork(nn.Module):
+    """Neural network for direct drone control."""
     
     def __init__(
         self,
         state_dim: int,
+        action_dim: int = 4,  # thrust, roll, pitch, yaw
         hidden_dim: int = 256,
         log_std_min: float = -20,
         log_std_max: float = 2
     ):
         """
-        Initialize supervisor network.
+        Initialize direct control network.
         
         Args:
             state_dim: Dimension of state space
+            action_dim: Dimension of action space (default 4: thrust, roll, pitch, yaw)
             hidden_dim: Hidden layer dimension
             log_std_min: Minimum log standard deviation
             log_std_max: Maximum log standard deviation
@@ -39,6 +33,7 @@ class SupervisorNetwork(nn.Module):
         
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
+        self.action_dim = action_dim
         
         # State encoder
         self.encoder = nn.Sequential(
@@ -48,9 +43,9 @@ class SupervisorNetwork(nn.Module):
             nn.ReLU()
         )
         
-        # Output layers for PID gains
-        self.mean = nn.Linear(hidden_dim, 1)  # Only P gain for now
-        self.log_std = nn.Linear(hidden_dim, 1)
+        # Output layers for control actions
+        self.mean = nn.Linear(hidden_dim, action_dim)
+        self.log_std = nn.Linear(hidden_dim, action_dim)
     
     def forward(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -60,8 +55,8 @@ class SupervisorNetwork(nn.Module):
             state: State tensor [batch_size, state_dim]
             
         Returns:
-            mean: Mean of the Gaussian policy [batch_size, 1]
-            log_std: Log standard deviation [batch_size, 1]
+            mean: Mean of the Gaussian policy [batch_size, action_dim]
+            log_std: Log standard deviation [batch_size, action_dim]
         """
         x = self.encoder(state)
         mean = self.mean(x)
@@ -72,32 +67,31 @@ class SupervisorNetwork(nn.Module):
     
     def sample(self, state: torch.Tensor, deterministic: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Sample PID gain from the policy.
+        Sample control action from the policy.
         
         Args:
             state: State tensor [batch_size, state_dim]
-            deterministic: If True, return the mean gain
+            deterministic: If True, return the mean action
             
         Returns:
-            gain: Sampled PID gain [batch_size, 1]
-            log_prob: Log probability of the gain [batch_size, 1]
+            action: Sampled control action [batch_size, action_dim]
+            log_prob: Log probability of the action [batch_size, 1]
         """
         mean, log_std = self.forward(state)
         std = torch.exp(log_std)
         
         if deterministic:
-            gain = mean
-            return gain, None
+            return torch.tanh(mean), None
         
         normal = torch.distributions.Normal(mean, std)
         x_t = normal.rsample()  # Reparameterization trick
-        gain = torch.sigmoid(x_t)  # Constrain gain to (0, 1)
+        action = torch.tanh(x_t)  # Constrain actions to [-1, 1]
         
         # Compute log probability, using the formula for change of variables
-        log_prob = normal.log_prob(x_t) - torch.log(gain * (1 - gain) + 1e-6)
+        log_prob = normal.log_prob(x_t) - torch.log(1 - action.pow(2) + 1e-6)
         log_prob = log_prob.sum(1, keepdim=True)
         
-        return gain, log_prob
+        return action, log_prob
     
     def evaluate(self, state: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -108,19 +102,20 @@ class SupervisorNetwork(nn.Module):
             action: Action tensor [batch_size, action_dim]
             
         Returns:
-            gain: Mean PID gain [batch_size, 1]
+            mean: Mean action [batch_size, action_dim]
             log_prob: Log probability of the action [batch_size, 1]
         """
         mean, log_std = self.forward(state)
         std = torch.exp(log_std)
         normal = torch.distributions.Normal(mean, std)
         
-        # Invert sigmoid transformation: gain = sigmoid(x_t) => x_t = logit(gain)
-        eps = 1e-6  # For numerical stability
-        x_t = torch.log(action / (1 - action + eps) + eps)
+        # Invert tanh transformation: action = tanh(x_t) => x_t = atanh(action)
+        # Use approximation for numerical stability
+        eps = 1e-6
+        x_t = 0.5 * torch.log((1 + action + eps) / (1 - action + eps))
         
         # Compute log probability including change of variables
-        log_prob = normal.log_prob(x_t) - torch.log(action * (1 - action) + eps)
+        log_prob = normal.log_prob(x_t) - torch.log(1 - action.pow(2) + eps)
         log_prob = log_prob.sum(1, keepdim=True)
         
         return mean, log_prob

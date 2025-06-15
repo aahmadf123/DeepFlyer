@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-RL PID Supervisor using P3O.
+Direct RL Control Node for drone control.
 
-This module implements a ROS2 node that uses RL to tune PID controllers
-for drone path following using the P3O algorithm.
+This module implements a ROS2 node that uses P3O to directly control a drone
+without an intermediate PID controller.
 """
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, Point, Vector3
+from geometry_msgs.msg import PoseStamped, Point, Vector3, TwistStamped
 from nav_msgs.msg import Path
 from std_msgs.msg import Float32, Bool
-from mavros_msgs.msg import State
+from mavros_msgs.msg import State, AttitudeTarget
 import numpy as np
 import torch
 import gymnasium as gym
@@ -19,28 +19,29 @@ from typing import List, Dict, Tuple, Optional, Any, Union
 import time
 import threading
 
-from rl_agent.supervisor_agent import SupervisorAgent
-from rl_agent.pid_controller import PIDController
+from rl_agent.direct_control_agent import DirectControlAgent
+
 
 # Observation and action spaces
 MAX_ERROR = 10.0  # Maximum cross-track error (meters)
 MAX_HEADING_ERROR = np.pi  # Maximum heading error (radians)
-MAX_GAIN = 5.0  # Maximum PID gain
+MAX_THRUST = 1.0  # Maximum thrust (normalized 0-1)
+MAX_RATE = 1.0  # Maximum angular rate (rad/s)
 
 
-class RLPIDSupervisor(Node):
+class DirectControlNode(Node):
     """
-    ROS2 node for RL-based PID tuning using P3O algorithm.
+    ROS2 node for direct RL-based drone control using P3O.
     
-    This node uses P3O (Procrastinated Policy-based Observer) to 
-    adaptively tune PID gains for improved path following.
+    This node uses P3O (Procrastinated Policy-based Observer) to
+    directly control a drone without an intermediate PID controller.
     """
     
     def __init__(
         self,
-        node_name: str = 'rl_pid_supervisor',
-        observation_dim: int = 8,
-        action_dim: int = 1,
+        node_name: str = 'direct_control_node',
+        observation_dim: int = 12,  # State + path info
+        action_dim: int = 4,  # thrust, roll, pitch, yaw
         hidden_dim: int = 256,
         gamma: float = 0.99,
         buffer_size: int = 1_000_000,
@@ -51,15 +52,16 @@ class RLPIDSupervisor(Node):
         entropy_coef: float = 0.01,
         clip_ratio: float = 0.2,
         n_updates: int = 10,
-        update_freq: float = 10.0  # Hz
+        update_freq: float = 20.0,  # Hz
+        safety_layer: bool = True
     ):
         """
-        Initialize the RL PID Supervisor.
+        Initialize the Direct Control Node.
         
         Args:
             node_name: ROS2 node name
             observation_dim: Dimension of the observation space
-            action_dim: Dimension of the action space (PID gains)
+            action_dim: Dimension of the action space (control commands)
             hidden_dim: Hidden dimension of the neural networks
             gamma: Discount factor
             buffer_size: Size of the replay buffer
@@ -71,6 +73,7 @@ class RLPIDSupervisor(Node):
             clip_ratio: PPO clip parameter
             n_updates: Number of policy updates per learning iteration
             update_freq: Frequency of control updates (Hz)
+            safety_layer: Whether to use a safety layer
         """
         super().__init__(node_name)
         
@@ -83,14 +86,13 @@ class RLPIDSupervisor(Node):
         )
         
         self.action_space = gym.spaces.Box(
-            low=0.0,
-            high=MAX_GAIN,
-            shape=(action_dim,),
+            low=np.array([0.0, -MAX_RATE, -MAX_RATE, -MAX_RATE]),
+            high=np.array([MAX_THRUST, MAX_RATE, MAX_RATE, MAX_RATE]),
             dtype=np.float32
         )
         
-        # Create supervisor agent
-        self.agent = SupervisorAgent(
+        # Create direct control agent
+        self.agent = DirectControlAgent(
             observation_space=self.observation_space,
             action_space=self.action_space,
             device="auto",
@@ -106,9 +108,6 @@ class RLPIDSupervisor(Node):
             n_updates=n_updates
         )
         
-        # Create PID controller for path following
-        self.pid_controller = self.agent.pid
-        
         # Initialize state variables
         self.drone_pose = None
         self.drone_velocity = None
@@ -123,6 +122,7 @@ class RLPIDSupervisor(Node):
         self.last_action = None
         self.logging_enabled = False
         self.is_armed = False
+        self.safety_layer = safety_layer
         
         # Mutex for thread safety
         self.state_lock = threading.Lock()
@@ -136,7 +136,7 @@ class RLPIDSupervisor(Node):
         )
         
         self.create_subscription(
-            Vector3,
+            TwistStamped,
             '/mavros/local_position/velocity_local',
             self.velocity_callback,
             10
@@ -169,22 +169,23 @@ class RLPIDSupervisor(Node):
             10
         )
         
-        self.p_gain_pub = self.create_publisher(
-            Float32,
-            '/deepflyer/p_gain',
-            10
-        )
-        
         self.path_pub = self.create_publisher(
             Path,
             '/deepflyer/path',
             10
         )
         
+        # Publisher for direct control commands
+        self.attitude_pub = self.create_publisher(
+            AttitudeTarget,
+            '/mavros/setpoint_raw/attitude',
+            10
+        )
+        
         # Create timer for control loop
         self.timer = self.create_timer(1.0 / update_freq, self.control_loop)
         
-        self.get_logger().info('RLPIDSupervisor has been initialized')
+        self.get_logger().info('DirectControlNode has been initialized')
     
     def pose_callback(self, msg: PoseStamped) -> None:
         """Process drone pose."""
@@ -192,10 +193,11 @@ class RLPIDSupervisor(Node):
             position = msg.pose.position
             self.drone_pose = np.array([position.x, position.y, position.z])
     
-    def velocity_callback(self, msg: Vector3) -> None:
+    def velocity_callback(self, msg: TwistStamped) -> None:
         """Process drone velocity."""
         with self.state_lock:
-            self.drone_velocity = np.array([msg.x, msg.y, msg.z])
+            linear = msg.twist.linear
+            self.drone_velocity = np.array([linear.x, linear.y, linear.z])
     
     def state_callback(self, msg: State) -> None:
         """Process drone state."""
@@ -229,7 +231,7 @@ class RLPIDSupervisor(Node):
         """
         Main control loop that runs at the update frequency.
         
-        Computes errors, updates the agent, and collects data for learning.
+        Computes errors, gets control commands from the agent, and sends them to the drone.
         """
         with self.state_lock:
             if self.drone_pose is None or self.drone_velocity is None:
@@ -241,16 +243,28 @@ class RLPIDSupervisor(Node):
             # Get observation
             observation = self._get_observation()
             
-            # Use agent to adjust PID gains
+            # Use agent to get control commands
             action, _ = self.agent.predict(observation)
             
-            # Publish current gain
-            self._publish_gain()
+            # Apply safety layer if enabled
+            if self.safety_layer:
+                action = self._apply_safety_layer(action, observation)
+            
+            # Send control commands to drone
+            self._send_control_commands(action)
+            
+            # Publish errors
+            self._publish_errors()
             
             # Store data for learning if logging is enabled
-            if self.logging_enabled and self.last_observation is not None:
+            if self.logging_enabled and self.last_observation is not None and self.last_action is not None:
                 # Compute reward based on errors (lower error is better)
                 reward = -(abs(self.cross_track_error) + 0.1 * abs(self.heading_error))
+                
+                # Add action smoothness penalty if we have previous actions
+                if self.agent.last_action is not None:
+                    action_diff = np.linalg.norm(action - self.agent.last_action)
+                    reward -= self.agent.action_smoothness_penalty * action_diff
                 
                 # Add to buffer
                 self.agent.add_to_buffer(
@@ -263,7 +277,7 @@ class RLPIDSupervisor(Node):
             
             # Update for next iteration
             self.last_observation = observation.copy()
-            self.last_action = action
+            self.last_action = action.copy()
     
     def _compute_errors(self) -> None:
         """Compute cross-track and heading errors."""
@@ -291,9 +305,6 @@ class RLPIDSupervisor(Node):
             self.heading_error = np.arccos(np.clip(heading_dot, -1.0, 1.0))
         else:
             self.heading_error = 0.0
-        
-        # Publish errors
-        self._publish_errors()
     
     def _get_observation(self) -> np.ndarray:
         """
@@ -311,26 +322,96 @@ class RLPIDSupervisor(Node):
         norm_cross_error = self.cross_track_error / MAX_ERROR
         norm_heading_error = self.heading_error / MAX_HEADING_ERROR
         
-        # Drone velocity
-        norm_velocity = np.linalg.norm(self.drone_velocity)
+        # Path direction (normalized)
+        path_dir = self.path_vector / max(self.path_length, 1e-6)
         
-        # Current PID gains
-        current_p_gain = self.pid_controller.kp / MAX_GAIN
-        current_i_gain = self.pid_controller.ki / MAX_GAIN
-        current_d_gain = self.pid_controller.kd / MAX_GAIN
+        # Vector from drone to path end
+        to_goal = self.path_end - self.drone_pose
+        dist_to_goal = np.linalg.norm(to_goal)
+        to_goal_dir = to_goal / max(dist_to_goal, 1e-6)
         
         observation = np.array([
+            # Drone state
+            self.drone_pose[0], self.drone_pose[1], self.drone_pose[2],
+            self.drone_velocity[0], self.drone_velocity[1], self.drone_velocity[2],
+            
+            # Path and error information
+            path_dir[0], path_dir[1], path_dir[2],
             norm_cross_error,
             norm_heading_error,
             path_progress,
-            norm_velocity,
-            current_p_gain,
-            current_i_gain,
-            current_d_gain,
-            1.0 if self.is_armed else 0.0  # Drone armed state
         ], dtype=np.float32)
         
         return observation
+    
+    def _apply_safety_layer(self, action: np.ndarray, observation: np.ndarray) -> np.ndarray:
+        """
+        Apply safety constraints to the control action.
+        
+        Args:
+            action: Raw control action [thrust, roll_rate, pitch_rate, yaw_rate]
+            observation: Current observation
+            
+        Returns:
+            safe_action: Safety-constrained action
+        """
+        # Extract relevant information from observation
+        drone_pos = observation[0:3]
+        drone_vel = observation[3:6]
+        
+        # Create a copy of the action to modify
+        safe_action = action.copy()
+        
+        # 1. Ensure minimum thrust to prevent free-fall
+        safe_action[0] = max(safe_action[0], 0.2)
+        
+        # 2. Limit maximum thrust
+        safe_action[0] = min(safe_action[0], 0.9)
+        
+        # 3. Limit angular rates based on altitude (more conservative at low altitude)
+        altitude = drone_pos[2]
+        if altitude < 1.0:
+            # More conservative at low altitude
+            rate_scale = 0.5 * altitude
+            safe_action[1:] = safe_action[1:] * rate_scale
+        
+        # 4. Prevent actions that would cause collision with ground
+        if altitude < 0.5 and drone_vel[2] < 0:
+            # If descending at low altitude, reduce descent rate
+            safe_action[0] = max(safe_action[0], 0.6)  # Increase thrust
+        
+        # 5. Limit maximum angular rates overall
+        max_rate = 0.7  # rad/s
+        for i in range(1, 4):
+            safe_action[i] = np.clip(safe_action[i], -max_rate, max_rate)
+        
+        return safe_action
+    
+    def _send_control_commands(self, action: np.ndarray) -> None:
+        """
+        Send control commands to the drone.
+        
+        Args:
+            action: Control action [thrust, roll_rate, pitch_rate, yaw_rate]
+        """
+        # Create attitude target message
+        attitude_msg = AttitudeTarget()
+        attitude_msg.header.stamp = self.get_clock().now().to_msg()
+        
+        # Set the type mask for rate control
+        # Ignore attitude and use body rate
+        attitude_msg.type_mask = AttitudeTarget.IGNORE_ATTITUDE
+        
+        # Set thrust (normalized 0-1)
+        attitude_msg.thrust = float(action[0])
+        
+        # Set body rates (rad/s)
+        attitude_msg.body_rate.x = float(action[1])  # Roll rate
+        attitude_msg.body_rate.y = float(action[2])  # Pitch rate
+        attitude_msg.body_rate.z = float(action[3])  # Yaw rate
+        
+        # Publish the message
+        self.attitude_pub.publish(attitude_msg)
     
     def _publish_errors(self) -> None:
         """Publish current errors."""
@@ -341,12 +422,6 @@ class RLPIDSupervisor(Node):
         heading_error_msg = Float32()
         heading_error_msg.data = float(self.heading_error)
         self.heading_error_pub.publish(heading_error_msg)
-    
-    def _publish_gain(self) -> None:
-        """Publish current PID gain."""
-        p_gain_msg = Float32()
-        p_gain_msg.data = float(self.pid_controller.kp)
-        self.p_gain_pub.publish(p_gain_msg)
     
     def _publish_path(self) -> None:
         """Publish current path for visualization."""
@@ -416,13 +491,13 @@ class RLPIDSupervisor(Node):
 
 
 def main(args=None):
-    """Run the RLPIDSupervisor node."""
+    """Run the DirectControlNode."""
     rclpy.init(args=args)
-    supervisor = RLPIDSupervisor()
-    rclpy.spin(supervisor)
-    supervisor.destroy_node()
+    node = DirectControlNode()
+    rclpy.spin(node)
+    node.destroy_node()
     rclpy.shutdown()
 
 
 if __name__ == '__main__':
-    main() 
+    main()

@@ -1,17 +1,18 @@
-# DeepFlyer
+# DeepFlyer - Direct RL Control for Drones
 
-DeepFlyer is a deep reinforcement learning framework for autonomous drone control and navigation.
+DeepFlyer is a deep reinforcement learning framework for autonomous drone control and navigation using direct control.
 
 ## Overview
 
-DeepFlyer combines classical control methods with deep reinforcement learning to create robust and efficient flight controllers for UAVs. The framework leverages the P3O (Procrastinated Policy-based Observer) algorithm for tuning PID controllers in real-time, providing improved adaptability and performance over traditional fixed-gain controllers.
+DeepFlyer implements direct reinforcement learning control for drones using the P3O (Procrastinated Policy-based Observer) algorithm. Unlike traditional approaches that use RL to tune PID controllers, our approach directly outputs control commands to the drone, providing greater flexibility and performance.
 
 ## Key Features
 
-- P3O-based adaptive PID gain tuning
+- Direct RL control using P3O algorithm
 - Seamless integration with ROS2 and MAVROS
 - ZED camera integration for visual perception
 - Path planning and obstacle avoidance
+- Safety layer to prevent dangerous actions
 
 ## P3O Algorithm
 
@@ -20,6 +21,15 @@ The project implements the P3O algorithm, which combines the advantages of on-po
 - **Procrastinated Updates**: Postpones on-policy updates to improve sample efficiency
 - **Blended Learning**: Combines on-policy and off-policy gradients for better stability
 - **Adaptive Exploration**: Uses entropy regularization to maintain appropriate exploration
+
+## Direct Control Approach
+
+Unlike our previous RL-as-Supervisor approach, the direct control approach:
+
+1. Outputs control commands directly (thrust, roll rate, pitch rate, yaw rate)
+2. Eliminates the need for intermediate PID controllers
+3. Can discover control strategies not possible with PID control
+4. Includes a safety layer to prevent dangerous actions
 
 ## Installation
 
@@ -56,23 +66,23 @@ source install/setup.bash
 
 ## Usage
 
-### Training a P3O agent
+### Training a Direct Control Agent
 
 ```bash
 cd ~/deepflyer_ws
 source install/setup.bash
-ros2 run deepflyer scripts/test_rl_supervisor.py --train --collect_time 300 --save_model ./models/p3o_agent.pt
+python scripts/test_direct_control.py --train --collect_time 300 --save_model ./models/direct_p3o_agent.pt
 ```
 
-### Testing a trained agent
+### Testing a Trained Agent
 
 ```bash
 cd ~/deepflyer_ws
 source install/setup.bash
-ros2 run deepflyer scripts/test_rl_supervisor.py --test --test_time 120 --load_model ./models/p3o_agent.pt
+python scripts/test_direct_control.py --test --test_time 120 --load_model ./models/direct_p3o_agent.pt
 ```
 
-### Advanced parameters
+### Advanced Parameters
 
 The P3O implementation provides several hyperparameters to customize the learning behavior:
 
@@ -81,17 +91,19 @@ The P3O implementation provides several hyperparameters to customize the learnin
 - `--entropy_coef`: Entropy regularization coefficient (default: 0.01)
 - `--batch_size`: Batch size for learning updates (default: 256)
 - `--learn_interval`: Time between learning updates in seconds (default: 1.0)
+- `--safety_layer`: Enable safety constraints (default: enabled)
+- `--no_safety_layer`: Disable safety constraints
 
 ## Project Structure
 
 - `rl_agent/`: Reinforcement learning algorithms and models
-  - `env/`: Environment interfaces for MAVROS and ZED camera
-  - `models/`: Neural network architectures
-  - `supervisor_agent.py`: P3O implementation for PID tuning
-- `api/`: REST API for remote monitoring and control
-- `config/`: Configuration files for MAVROS and ZED camera
+  - `direct_control_agent.py`: P3O implementation for direct drone control
+  - `direct_control_network.py`: Neural network architecture for direct control
+  - `direct_control_node.py`: ROS2 node for direct drone control
+  - `models/`: Base model classes and utilities
 - `scripts/`: Utility scripts for training and deployment
-- `tests/`: Unit and integration tests
+  - `test_direct_control.py`: Script for training and testing direct control
+- `config/`: Configuration files for MAVROS and ZED camera
 
 ## Contributing
 
@@ -108,7 +120,7 @@ If you use DeepFlyer in your research, please cite:
 ```
 @misc{deepflyer2023,
   author = {DeepFlyer Team},
-  title = {DeepFlyer: Deep Reinforcement Learning for Autonomous UAV Control},
+  title = {DeepFlyer: Direct Deep Reinforcement Learning for Autonomous UAV Control},
   year = {2023},
   publisher = {GitHub},
   journal = {GitHub Repository},

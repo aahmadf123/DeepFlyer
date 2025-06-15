@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Test script for the RL-as-Supervisor approach.
+Test script for the direct RL control approach.
 
-This script runs a simple test of the RL-as-Supervisor approach for
-tuning PID controllers on a drone path following task.
+This script runs a test of the direct RL control approach using P3O
+for drone path following.
 """
 
 import rclpy
@@ -16,7 +16,7 @@ import logging
 import json
 from datetime import datetime
 
-from rl_agent.rl_pid_supervisor import RLPIDSupervisor
+from rl_agent.direct_control_node import DirectControlNode
 
 # Configure logging
 logging.basicConfig(
@@ -24,10 +24,10 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-logger = logging.getLogger("test_rl_supervisor")
+logger = logging.getLogger("test_direct_control")
 
 
-def run_test_sequence(supervisor: RLPIDSupervisor, args):
+def run_test_sequence(controller: DirectControlNode, args):
     """Run a test sequence."""
     # Wait for ROS2 nodes to initialize
     logger.info("Waiting for initialization...")
@@ -38,13 +38,13 @@ def run_test_sequence(supervisor: RLPIDSupervisor, args):
     target = [10.0, 0.0, 1.5]  # Go 10m forward
     
     # Set path
-    supervisor.set_path(origin, target)
+    controller.set_path(origin, target)
     logger.info(f"Set path from {origin} to {target}")
     
     # Training phase
     if args.train:
         logger.info("Starting data collection...")
-        supervisor.enable_logging(True)
+        controller.enable_logging(True)
         
         # Create metrics tracker
         metrics = {
@@ -55,7 +55,7 @@ def run_test_sequence(supervisor: RLPIDSupervisor, args):
             "entropy": [],
             "cross_track_errors": [],
             "heading_errors": [],
-            "pid_gains": []
+            "actions": []
         }
         
         start_time = time.time()
@@ -69,7 +69,7 @@ def run_test_sequence(supervisor: RLPIDSupervisor, args):
             current_time = time.time()
             if current_time - last_learn_time >= args.learn_interval:
                 # Train the agent
-                train_metrics = supervisor.learn(batch_size=args.batch_size)
+                train_metrics = controller.learn(batch_size=args.batch_size)
                 
                 # Record metrics
                 if "on_policy_loss" in train_metrics:
@@ -77,10 +77,11 @@ def run_test_sequence(supervisor: RLPIDSupervisor, args):
                     metrics["on_policy_losses"].append(train_metrics.get("on_policy_loss", float('nan')))
                     metrics["off_policy_losses"].append(train_metrics.get("off_policy_value_loss", float('nan')))
                     metrics["entropy"].append(train_metrics.get("entropy", float('nan')))
-                    metrics["cross_track_errors"].append(float(supervisor.cross_track_error))
-                    metrics["heading_errors"].append(float(supervisor.heading_error))
-                    metrics["pid_gains"].append(float(supervisor.pid_controller.kp))
-                    metrics["rewards"].append(-(abs(supervisor.cross_track_error) + 0.1 * abs(supervisor.heading_error)))
+                    metrics["cross_track_errors"].append(float(controller.cross_track_error))
+                    metrics["heading_errors"].append(float(controller.heading_error))
+                    if controller.last_action is not None:
+                        metrics["actions"].append(controller.last_action.tolist())
+                    metrics["rewards"].append(-(abs(controller.cross_track_error) + 0.1 * abs(controller.heading_error)))
                 
                 last_learn_time = current_time
                 
@@ -88,8 +89,8 @@ def run_test_sequence(supervisor: RLPIDSupervisor, args):
                 if current_time - last_print_time >= 5.0:
                     logger.info(
                         f"Training progress: {current_time - start_time:.1f}/{args.collect_time}s | "
-                        f"P-gain: {supervisor.pid_controller.kp:.3f} | "
-                        f"Cross-track error: {supervisor.cross_track_error:.3f}"
+                        f"Cross-track error: {controller.cross_track_error:.3f} | "
+                        f"Heading error: {controller.heading_error:.3f}"
                     )
                     last_print_time = current_time
             
@@ -98,14 +99,14 @@ def run_test_sequence(supervisor: RLPIDSupervisor, args):
         # Final training
         logger.info(f"Performing final training with {args.train_steps} steps...")
         for _ in range(args.train_steps):
-            supervisor.learn(batch_size=args.batch_size)
+            controller.learn(batch_size=args.batch_size)
         
         # Save the model if path specified
         if args.save_model:
             model_dir = os.path.dirname(args.save_model)
             if model_dir and not os.path.exists(model_dir):
                 os.makedirs(model_dir)
-            supervisor.save_model(args.save_model)
+            controller.save_model(args.save_model)
             logger.info(f"Model saved to {args.save_model}")
             
             # Save metrics alongside model
@@ -118,12 +119,12 @@ def run_test_sequence(supervisor: RLPIDSupervisor, args):
     if args.test:
         # Load model if path specified
         if args.load_model:
-            supervisor.load_model(args.load_model)
+            controller.load_model(args.load_model)
             logger.info(f"Model loaded from {args.load_model}")
         
         # Follow path with trained agent
         logger.info("Following path with trained agent...")
-        supervisor.enable_logging(True)  # Enable logging for metrics
+        controller.enable_logging(True)  # Enable logging for metrics
         
         # Wait for test to complete
         logger.info(f"Testing for {args.test_time} seconds...")
@@ -131,26 +132,47 @@ def run_test_sequence(supervisor: RLPIDSupervisor, args):
         start_time = time.time()
         last_print_time = start_time
         
+        # Create test metrics tracker
+        test_metrics = {
+            "timesteps": [],
+            "cross_track_errors": [],
+            "heading_errors": [],
+            "actions": []
+        }
+        
         while time.time() - start_time < args.test_time:
-            # Print progress periodically
+            # Record metrics periodically
             current_time = time.time()
-            if current_time - last_print_time >= 2.0:
+            if current_time - last_print_time >= 1.0:  # Record every second
+                test_metrics["timesteps"].append(current_time - start_time)
+                test_metrics["cross_track_errors"].append(float(controller.cross_track_error))
+                test_metrics["heading_errors"].append(float(controller.heading_error))
+                if controller.last_action is not None:
+                    test_metrics["actions"].append(controller.last_action.tolist())
+                
+                # Print progress
                 logger.info(
                     f"Test progress: {current_time - start_time:.1f}/{args.test_time}s | "
-                    f"P-gain: {supervisor.pid_controller.kp:.3f} | "
-                    f"Cross-track error: {supervisor.cross_track_error:.3f} | "
-                    f"Heading error: {supervisor.heading_error:.3f}"
+                    f"Cross-track error: {controller.cross_track_error:.3f} | "
+                    f"Heading error: {controller.heading_error:.3f}"
                 )
                 last_print_time = current_time
             
             time.sleep(0.1)  # Small sleep to avoid high CPU usage
+        
+        # Save test metrics if model was loaded
+        if args.load_model:
+            test_metrics_path = os.path.splitext(args.load_model)[0] + "_test_metrics.json"
+            with open(test_metrics_path, 'w') as f:
+                json.dump(test_metrics, f)
+            logger.info(f"Test metrics saved to {test_metrics_path}")
     
     logger.info("Test sequence completed")
 
 
 def main():
     """Main function."""
-    parser = argparse.ArgumentParser(description='Test RL-as-Supervisor for PID tuning.')
+    parser = argparse.ArgumentParser(description='Test direct RL control for drone path following.')
     parser.add_argument('--train', action='store_true', help='Perform training')
     parser.add_argument('--test', action='store_true', help='Perform testing')
     parser.add_argument('--collect_time', type=float, default=60.0, help='Data collection time (seconds)')
@@ -163,6 +185,8 @@ def main():
     parser.add_argument('--procrastination_factor', type=float, default=0.95, help='P3O procrastination factor (0-1)')
     parser.add_argument('--alpha', type=float, default=0.2, help='Blend factor for P3O (0-1)')
     parser.add_argument('--entropy_coef', type=float, default=0.01, help='Entropy coefficient')
+    parser.add_argument('--safety_layer', action='store_true', help='Enable safety layer', default=True)
+    parser.add_argument('--no_safety_layer', action='store_false', dest='safety_layer', help='Disable safety layer')
     args = parser.parse_args()
     
     if not args.train and not args.test:
@@ -172,28 +196,29 @@ def main():
     # Initialize ROS2
     rclpy.init()
     
-    # Create supervisor with P3O specific parameters
-    supervisor = RLPIDSupervisor(
+    # Create direct control node with P3O specific parameters
+    controller = DirectControlNode(
         procrastination_factor=args.procrastination_factor,
         alpha=args.alpha,
-        entropy_coef=args.entropy_coef
+        entropy_coef=args.entropy_coef,
+        safety_layer=args.safety_layer
     )
     
     # Create thread for ROS2 spinning
-    ros_thread = Thread(target=lambda: rclpy.spin(supervisor))
+    ros_thread = Thread(target=lambda: rclpy.spin(controller))
     ros_thread.daemon = True
     ros_thread.start()
     
     try:
         # Run test sequence
-        run_test_sequence(supervisor, args)
+        run_test_sequence(controller, args)
     except KeyboardInterrupt:
         logger.info("Test interrupted")
     except Exception as e:
         logger.error(f"Error during test: {str(e)}", exc_info=True)
     finally:
         # Clean up
-        supervisor.destroy_node()
+        controller.destroy_node()
         rclpy.shutdown()
         ros_thread.join(timeout=1.0)
 
