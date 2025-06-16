@@ -29,7 +29,7 @@ logger = logging.getLogger("train_agent")
 # Import our modules
 from rl_agent.env.mavros_env import MAVROSEnv
 from rl_agent.direct_control_agent import DirectControlAgent
-from rl_agent.rewards import create_trajectory_following_reward, create_wind_resistant_reward
+from rl_agent.rewards import create_cross_track_and_heading_reward
 
 
 def train_agent(args):
@@ -49,15 +49,13 @@ def train_agent(args):
     ]
     
     # Create reward function
-    if args.wind_resistant:
-        reward_fn = create_wind_resistant_reward()
-        logger.info("Using wind-resistant reward function")
-    else:
-        reward_fn = create_trajectory_following_reward()
-        logger.info("Using standard trajectory following reward function")
-    
-    # Add trajectory to reward function
-    reward_fn.components[0].parameters["trajectory"] = trajectory
+    reward_fn = create_cross_track_and_heading_reward(
+        cross_track_weight=1.0,
+        heading_weight=0.1,
+        max_error=2.0,
+        max_heading_error=np.pi,
+        trajectory=trajectory,  # Use the same trajectory as before
+    )
     
     # Create environment
     env = MAVROSEnv(

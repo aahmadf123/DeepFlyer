@@ -588,15 +588,16 @@ env.close()
 | `step_duration` | float | Duration of each step in seconds | 0.05 |
 | `timeout` | float | Timeout for sensor data in seconds | 5.0 |
 | `goal_position` | List[float] | Target position [x, y, z] | [5.0, 5.0, 1.5] |
-| `target_altitude` | float | Target altitude for altitude hold | 1.5 |
+| `target_altitude` | float | Default altitude for takeoff | None |
 | `camera_resolution` | Tuple[int, int] | Resolution for camera images | (84, 84) |
+| `cross_track_weight` | float | Weight for cross-track error (path following) | 1.0 |
+| `heading_weight` | float | Weight for heading error | 0.1 |
 | `use_zed` | bool | Whether to use ZED camera | True |
 | `auto_arm` | bool | Automatically arm on reset | False |
 | `auto_offboard` | bool | Auto set OFFBOARD mode | False |
 | `safety_boundaries` | Dict[str, float] | Position and velocity limits | See SafetyBounds |
-| `enable_safety_layer` | bool | Use safety protection | True |
+| `enable_safety_layer` | bool | Whether to enable safety layer | True |
 | `reward_function` | RewardFunction | Custom reward function | Default reward |
-| `custom_reward_weights` | Dict[str, float] | Custom weights for rewards | None |
 
 #### Default Observation Config
 ```python
@@ -882,29 +883,16 @@ env.close()
 ```python
 import numpy as np
 from rl_agent.env.mavros_env import MAVROSResearcherEnv
-from rl_agent.rewards import create_default_reward_function, REGISTRY
+from rl_agent.rewards import create_cross_track_and_heading_reward
 
-# Create a custom reward function
-reward_fn = create_default_reward_function()
-
-# Add trajectory following component
-trajectory = [
-    np.array([0.0, 0.0, 1.5]),   # Start
-    np.array([5.0, 0.0, 1.5]),   # Forward 5m
-    np.array([5.0, 5.0, 1.5]),   # Right 5m
-    np.array([0.0, 5.0, 1.5]),   # Back 5m
-    np.array([0.0, 0.0, 1.5]),   # Left 5m (return to start)
-]
-
-reward_fn.add_component("follow_trajectory", weight=1.5, 
-                        parameters={'trajectory': trajectory})
-
-# Modify other component weights
-for i, component in enumerate(reward_fn.components):
-    if component.component_type.value == 'reach_target':
-        reward_fn.components[i].weight = 0.5  # Less emphasis on final goal
-    elif component.component_type.value == 'fly_steady':
-        reward_fn.components[i].weight = 1.0  # More emphasis on smooth flight
+# Create a custom two-term reward function
+reward_fn = create_cross_track_and_heading_reward(
+    cross_track_weight=1.0,
+    heading_weight=0.1,
+    max_error=2.0,
+    max_heading_error=np.pi,
+    trajectory=trajectory,
+)
 
 # Create environment with custom reward function
 env = MAVROSResearcherEnv(

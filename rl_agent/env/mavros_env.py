@@ -5,7 +5,7 @@ import logging
 
 from .ros_env import RosEnv, MAVROS_AVAILABLE
 from .safety_layer import SafetyLayer, BeginnerSafetyLayer, SafetyBounds
-from ..rewards import RewardFunction, create_default_reward_function, REGISTRY
+from ..rewards import RewardFunction, create_cross_track_and_heading_reward, REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -48,28 +48,26 @@ class MAVROSEnv(RosEnv):
         safety_boundaries: Optional[Dict[str, float]] = None,
         enable_safety_layer: bool = True,
         reward_function: Optional[RewardFunction] = None,
-        custom_reward_weights: Optional[Dict[str, float]] = None,
     ):
         """
-        Initialize Pixhawk/PX4 drone environment.
+        Initialize MAVROS environment.
         
         Args:
-            namespace: ROS2 namespace for topics
-            observation_config: Dict specifying which observations to include
-            action_mode: "continuous" or "discrete" action space
+            namespace: ROS namespace for the drone
+            observation_config: Configuration for observation space
+            action_mode: Action space mode ('continuous' or 'discrete')
             max_episode_steps: Maximum steps per episode
-            step_duration: Duration of each environment step
-            timeout: Timeout for waiting for sensor data
-            goal_position: Goal position [x, y, z] for navigation tasks
-            target_altitude: Target altitude for altitude hold tasks
-            camera_resolution: Resolution to downsample camera images to
-            use_zed: Whether to use ZED Mini stereo camera topics
-            auto_arm: Automatically arm the drone during reset
-            auto_offboard: Automatically set OFFBOARD mode during reset
-            safety_boundaries: Safety boundaries for the drone (e.g., {'x_min': -5, 'x_max': 5})
-            enable_safety_layer: Whether to enable the safety layer
-            reward_function: Custom reward function (if None, default will be created)
-            custom_reward_weights: Custom weights for default reward components
+            step_duration: Duration of each step in seconds
+            timeout: Timeout for ROS service calls
+            goal_position: Target position [x, y, z] in meters
+            target_altitude: Default altitude for takeoff
+            camera_resolution: Resolution for camera images
+            use_zed: Whether to use ZED camera
+            auto_arm: Whether to arm automatically on reset
+            auto_offboard: Whether to set OFFBOARD mode automatically
+            safety_boundaries: Custom safety boundaries
+            enable_safety_layer: Whether to enable safety layer
+            reward_function: Custom reward function
         """
         if not MAVROS_AVAILABLE:
             logger.warning("MAVROS is not available. Using mock implementation.")
@@ -111,18 +109,16 @@ class MAVROSEnv(RosEnv):
         else:
             self.safety_layer = None
             
-        # Initialize reward function
+        # Initialize reward function with placeholder if none provided
         if reward_function is None:
-            self.reward_function = create_default_reward_function()
-            
-            # Apply custom weights if provided
-            if custom_reward_weights:
-                for i, component in enumerate(self.reward_function.components):
-                    component_name = component.component_type.value
-                    if component_name in custom_reward_weights:
-                        self.reward_function.components[i].weight = custom_reward_weights[component_name]
-        else:
-            self.reward_function = reward_function
+            # Use the two-term reward: cross-track error + heading error
+            reward_function = create_cross_track_and_heading_reward(
+                cross_track_weight=1.0,
+                heading_weight=0.1,
+                max_error=2.0,
+                max_heading_error=np.pi
+            )
+        self.reward_function = reward_function
             
         # Store previous action for reward calculation
         self.prev_action = None
@@ -514,19 +510,13 @@ class MAVROSExplorerEnv(MAVROSEnv):
         }
         
         # Create beginner-friendly reward function
-        reward_function = create_default_reward_function()
+        reward_function = create_cross_track_and_heading_reward(
+            cross_track_weight=1.5,  # Strong emphasis on path following
+            heading_weight=0.5,      # Moderate emphasis on heading
+            max_error=2.0,
+            max_heading_error=np.pi
+        )
         
-        # Adjust weights to make it more beginner-friendly
-        custom_reward_weights = {
-            'reach_target': 1.0,    # Primary goal
-            'avoid_crashes': 1.5,   # Safety first for beginners
-            'fly_steady': 0.5,      # Encourage smooth flight
-            'minimize_time': 0.05,  # Less time pressure
-        }
-        
-        # Use beginner safety layer with more restrictive bounds
-        beginner_safety = BeginnerSafetyLayer()
-            
         # Call parent constructor with explorer-friendly defaults
         super().__init__(
             namespace=namespace,
@@ -542,11 +532,10 @@ class MAVROSExplorerEnv(MAVROSEnv):
             auto_offboard=False,
             enable_safety_layer=True,
             reward_function=reward_function,
-            custom_reward_weights=custom_reward_weights,
         )
         
         # Override safety layer with beginner version
-        self.safety_layer = beginner_safety
+        self.safety_layer = BeginnerSafetyLayer()
         self.safety_layer.monitor.register_emergency_callback(self._handle_emergency)
         self.safety_layer.start_monitoring(self._get_safety_state)
         

@@ -1,81 +1,83 @@
 import numpy as np
 import pytest
 from rl_agent.rewards import (
-    reach_target_reward,
-    avoid_crashes_reward,
-    save_energy_reward,
-    fly_steady_reward,
-    fly_smoothly_reward,
-    be_fast_reward,
-    path_efficiency_reward,
-    adaptive_disturbance_reward,
-    multi_objective_reward,
+    follow_trajectory_reward,
+    heading_error_reward,
+    create_cross_track_and_heading_reward,
+    RewardFunction,
 )
 
-def test_reach_target_reward():
-    state = {"position": [0,0,0], "goal": [1,0,0], "max_room_diagonal": np.sqrt(2)}
-    r = reach_target_reward(state, {})
-    expected = max(0.0, 1.0 - (1/np.sqrt(2)))
-    assert pytest.approx(r, rel=1e-6) == expected
+def test_follow_trajectory_reward():
+    # Create a simple trajectory
+    trajectory = [
+        np.array([0.0, 0.0, 0.0]),
+        np.array([1.0, 0.0, 0.0]),
+        np.array([2.0, 0.0, 0.0]),
+    ]
+    
+    # Test when on the path
+    state = {"position": [0.5, 0.0, 0.0]}
+    params = {"trajectory": trajectory, "max_error": 2.0}
+    reward = follow_trajectory_reward(state, {}, parameters=params)
+    assert pytest.approx(reward, rel=1e-6) == 1.0  # No error, full reward
+    
+    # Test when off the path
+    state = {"position": [0.5, 1.0, 0.0]}  # 1m off the path
+    reward = follow_trajectory_reward(state, {}, parameters=params)
+    assert pytest.approx(reward, rel=1e-6) == 0.5  # Half of max_error, half reward
 
-def test_avoid_crashes_reward():
-    state = {"collision_flag": True, "dist_to_obstacle": 5}
-    assert avoid_crashes_reward(state, {}) == -1.0
-    state = {"collision_flag": False, "dist_to_obstacle": 0.1}
-    assert avoid_crashes_reward(state, {}) == -0.5
-    state = {"collision_flag": False, "dist_to_obstacle": 1.0}
-    assert avoid_crashes_reward(state, {}) == 0.0
+def test_heading_error_reward():
+    # Test with no error
+    state = {"heading_error": 0.0}
+    reward = heading_error_reward(state, {})
+    assert pytest.approx(reward, rel=1e-6) == 0.0  # No error, no penalty
+    
+    # Test with maximum error
+    state = {"heading_error": np.pi}
+    reward = heading_error_reward(state, {})
+    assert pytest.approx(reward, rel=1e-6) == -1.0  # Max error, full penalty
+    
+    # Test with half error
+    state = {"heading_error": np.pi/2}
+    reward = heading_error_reward(state, {})
+    assert pytest.approx(reward, rel=1e-6) == -0.5  # Half error, half penalty
 
-def test_save_energy_reward():
-    assert save_energy_reward({}, {"throttle": 0.0}) == 1.0
-    assert save_energy_reward({}, {"throttle": 1.0}) == 0.0
-
-def test_fly_steady_reward():
-    state = {"altitude": 1.0, "target_altitude": 2.0, "vertical_velocity": 0.5, "max_altitude_error": 1.0}
-    r = fly_steady_reward(state, {})
-    # altitude_component = 1 - 1/1 = 0, speed_penalty=0.25 => -0.25
-    assert pytest.approx(r, rel=1e-6) == -0.25
-
-def test_fly_smoothly_reward():
-    state = {"curr_velocity": [1,0,0], "prev_velocity": [0,0,0], "curr_angular_velocity": 0.2, "prev_angular_velocity": 0.0, "dt": 1.0, "max_lin_jerk": 2.0, "max_ang_jerk": 0.5}
-    r = fly_smoothly_reward(state, {})
-    # lin_jerk=1, lin_penalty=0.5; ang_diff=0.2, ang_penalty=0.4; reward=1 - 0.5*0.5 - 0.5*0.4 = 1 -0.25 -0.2 =0.55
-    assert pytest.approx(r, rel=1e-6) == 0.55
-
-def test_be_fast_reward():
-    state = {"curr_velocity": [1,0,0], "at_goal": False, "max_speed": 2.0}
-    assert be_fast_reward(state, {}) == 0.5
-    state = {"curr_velocity": [0,0,0], "at_goal": True, "time_elapsed": 5.0, "max_time_allowed": 10.0}
-    r = be_fast_reward(state, {})
-    assert pytest.approx(r, rel=1e-6) == 1.5
-
-def test_path_efficiency_reward():
-    # not at goal, prev_dist=5, curr_dist=3, straight_line=10
-    state = {"distance_traveled": 8.0, "straight_line_dist": 10.0, "prev_to_goal_dist": 5.0, "curr_to_goal_dist": 3.0, "at_goal": False}
-    r = path_efficiency_reward(state, {})
-    assert pytest.approx(r, rel=1e-6) == (5-3)/10.0
-    # at goal
-    state["at_goal"] = True
-    r2 = path_efficiency_reward(state, {})
-    assert pytest.approx(r2, rel=1e-6) == 10.0/8.0
-
-def test_adaptive_disturbance_reward():
-    # no external force => reward = -0
-    state = {"external_force": [0,0,0]}
-    r = adaptive_disturbance_reward(state, {"thrust_vector": [0,0,0]})
-    assert pytest.approx(r, abs=1e-6) == 0.0
-    # with external force
-    state = {"external_force": [1,0,0]}
-    r = adaptive_disturbance_reward(state, {"thrust_vector": [1,0,0]})
-    # comp_mag=1, disturbance_mag=1 => 1/1 -0.1*1 =0.9
-    assert pytest.approx(r, rel=1e-6) == 0.9
-
-def test_multi_objective_reward():
-    state = {"curr_to_goal_dist": 3.0, "prev_to_goal_dist": 5.0, "straight_line_dist": 10.0}
-    action = {"throttle": 0.0}
-    weights = {"reach": 1.0, "collision": 1.0, "energy": 1.0, "speed": 1.0}
-    # reach_target_reward approx = max(0,1 - (dist/diag)) diag default=1 => negative =>0
-    # avoid_crashes=0, save_energy=1, speed delta=2/10=0.2 => total =0+0+1+0.2=1.2
-    # Actually reach_target zero
-    r = multi_objective_reward(state, action, weights)
-    assert pytest.approx(r, rel=1e-6) == 1.2 
+def test_create_cross_track_and_heading_reward():
+    # Create a reward function with the helper
+    trajectory = [
+        np.array([0.0, 0.0, 0.0]),
+        np.array([1.0, 0.0, 0.0]),
+    ]
+    
+    reward_fn = create_cross_track_and_heading_reward(
+        cross_track_weight=1.0,
+        heading_weight=0.5,
+        max_error=2.0,
+        max_heading_error=np.pi,
+        trajectory=trajectory
+    )
+    
+    # Check that it's a RewardFunction instance
+    assert isinstance(reward_fn, RewardFunction)
+    
+    # Check that it has exactly 2 components
+    assert len(reward_fn.components) == 2
+    
+    # Check component types
+    assert reward_fn.components[0].component_type.value == "follow_trajectory"
+    assert reward_fn.components[1].component_type.value == "heading_error"
+    
+    # Check weights
+    assert reward_fn.components[0].weight == 1.0
+    assert reward_fn.components[1].weight == 0.5
+    
+    # Test computing a reward
+    state = {
+        "position": [0.5, 0.5, 0.0],  # 0.5m off path
+        "heading_error": np.pi/2,      # 90 degrees off
+    }
+    
+    reward = reward_fn.compute_reward(state, np.zeros(4))
+    
+    # Expected: 1.0 * (1 - 0.5/2.0) + 0.5 * (-0.5) = 0.75 - 0.25 = 0.5
+    assert pytest.approx(reward, rel=1e-6) == 0.5 

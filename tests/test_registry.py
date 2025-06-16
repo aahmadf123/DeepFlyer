@@ -5,7 +5,7 @@ from rl_agent.registry import RewardRegistry
 def test_list_presets_nonempty():
     presets = RewardRegistry.list_presets()
     assert isinstance(presets, list)
-    assert len(presets) >= 6  # at least the six Explorer presets
+    assert len(presets) >= 2  # at least follow_trajectory and heading_error
     for p in presets:
         assert 'id' in p and 'label' in p
 

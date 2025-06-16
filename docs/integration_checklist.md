@@ -64,19 +64,14 @@
    config = TrainingConfig(
        algorithm="PPO",
        environment="ros:deepflyer",  # ROS environment
-       reward_function="reach_target",
+       reward_function="follow_trajectory",
        hyperparameters={...}
    )
    ```
 
 3. **Available Reward Functions**
-   - `reach_target` - Navigate to goal
-   - `collision_avoidance` - Avoid obstacles
-   - `save_energy` - Minimize throttle
-   - `fly_steady` - Maintain altitude
-   - `fly_smoothly` - Smooth motion
-   - `be_fast` - Quick completion
-   - `multi_objective` - Weighted combination
+   - `follow_trajectory` - Follow a path
+   - `heading_error` - Maintain heading alignment
 
 4. **Metrics from Environment**
    ```python

@@ -101,13 +101,9 @@ def test_multi_objective():
     try:
         env = make_env(
             "ros:deepflyer",
-            reward_function="multi_objective",
-            reward_weights={
-                'reach': 1.0,
-                'collision': 2.0,
-                'energy': 0.5,
-                'speed': 0.3
-            }
+            reward_function="follow_trajectory",
+            cross_track_weight=1.5,
+            heading_weight=0.5
         )
         
         obs, info = env.reset()
@@ -169,7 +165,7 @@ def test_fallback_mode():
     print("=" * 60)
     
     # This should work even without ROS
-    env = make_env("CartPole-v1", reward_function="reach_target")
+    env = make_env("CartPole-v1", reward_function="follow_trajectory")
     print("✓ CartPole with drone reward created")
     
     obs, info = env.reset()

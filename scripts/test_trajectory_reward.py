@@ -28,8 +28,7 @@ logger = logging.getLogger("test_trajectory_reward")
 
 # Import our reward functions
 from rl_agent.rewards import (
-    create_trajectory_following_reward,
-    create_wind_resistant_reward,
+    create_cross_track_and_heading_reward,
     RewardFunction
 )
 
@@ -49,27 +48,31 @@ def test_trajectory_rewards():
     ]
     
     # Create a reward function for basic trajectory following
-    basic_reward = create_trajectory_following_reward()
-    basic_reward.components[0].parameters["trajectory"] = trajectory
-    
-    # Create a reward function optimized for wind resistance
-    wind_reward = create_wind_resistant_reward()
-    wind_reward.components[0].parameters["trajectory"] = trajectory
-    
-    # Create a fully custom reward function
-    custom_reward = RewardFunction()
-    custom_reward.add_component(
-        "follow_trajectory", 
-        weight=2.0,  # Very high weight on trajectory following
-        parameters={
-            "trajectory": trajectory,
-            "cross_track_weight": 0.9,  # Strong emphasis on path
-            "progress_weight": 0.1      # Little emphasis on speed
-        }
+    basic_reward = create_cross_track_and_heading_reward(
+        cross_track_weight=1.0,
+        heading_weight=0.1,
+        max_error=2.0,
+        max_heading_error=np.pi,
+        trajectory=trajectory,
     )
-    custom_reward.add_component("avoid_crashes", weight=1.5)
-    custom_reward.add_component("fly_smoothly", weight=1.2)
-    custom_reward.add_component("be_fast", weight=0.1)
+    
+    # Create a reward function optimized for wind resistance (use same two-term reward for simplicity)
+    wind_reward = create_cross_track_and_heading_reward(
+        cross_track_weight=1.0,
+        heading_weight=0.1,
+        max_error=2.0,
+        max_heading_error=np.pi,
+        trajectory=trajectory,
+    )
+    
+    # Create a fully custom reward function (if needed, keep only cross-track and heading error)
+    custom_reward = create_cross_track_and_heading_reward(
+        cross_track_weight=1.0,
+        heading_weight=0.1,
+        max_error=2.0,
+        max_heading_error=np.pi,
+        trajectory=trajectory,
+    )
     
     # Create environments with each reward function
     envs = []

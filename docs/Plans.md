@@ -5,7 +5,7 @@ Below is a concise, Markdown-friendly table showing each team member's responsib
 | Week | Dates        | Uma: Simulation & CAD                                                                                                                                                 | Jay: UI & Backend Integration                                                                                                                                                                                                                                                 | Ahmad: RL & AI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | :--: | :----------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 |   1  | May 14–20    | • Set up ROS 2 & Gazebo environment.<br>• Create bare-bones URDF visual model (no sensors).<br>• Verify drone spawns in Gazebo.                                       | • Scaffold FastAPI backend with placeholder endpoints.<br>• Initialize React/Next.js project skeleton.<br>• Define empty MongoDB schema.<br>• Create a stub "Training" page.                                                                                                  | • Install Python, PyTorch + CUDA, RL libraries.<br>• Clone simulation repo and verify ROS 2 topics.<br>• Start a Python package for the RL agent with a basic PPO skeleton.<br>• Implement a "hello-world" loop sending zero velocities and logging status.                                                                                                                                                                                                                                                                                     |
-|   2  | May 21–27    | • Add IMU & collision tags to URDF.<br>• Attach front-facing camera plugin (publish to `/drone/camera/front/image_raw`).<br>• Optimize meshes and validate in Gazebo. | • Expose `/api/rewards/list` and `/api/train/start`, `/api/train/status` (dummy).<br>• Build Mission Selector UI stub: dropdown for reward presets, "Start Training" button. | • Define six Explorer-mode reward function signatures: `reach_target`, `avoid_crashes`, `save_energy`, `fly_steady`, `fly_smoothly`, `be_fast`.<br>• Implement a `RewardRegistry` mapping IDs → functions, including metadata (friendly names, descriptions).<br>• Begin designing the custom-reward sandbox & validation framework (signature checks, safe execution).<br>• Expose `RewardRegistry.list_presets()` to FastAPI. |
+|   2  | May 21–27    | • Add IMU & collision tags to URDF.<br>• Attach front-facing camera plugin (publish to `/drone/camera/front/image_raw`).<br>• Optimize meshes and validate in Gazebo. | • Expose `/api/rewards/list` and `/api/train/start`, `/api/train/status` (dummy).<br>• Build Mission Selector UI stub: dropdown for reward presets, "Start Training" button. | • Define simplified two-term reward approach: `follow_trajectory` (cross-track error) and `heading_error`.<br>• Implement a `RewardRegistry` mapping IDs → functions, including metadata (friendly names, descriptions).<br>• Begin designing the custom-reward sandbox & validation framework (signature checks, safe execution).<br>• Expose `RewardRegistry.list_presets()` to FastAPI. |
 |   3  | May 28–Jun 3 | • Add motor plugins so drone can fly under velocity commands.<br>• Validate hover via Gazebo's GUI.                                                                   | • Populate dropdown by calling `/api/rewards/list`.<br>• On "Start Training," POST preset & defaults to `/api/train/start`.<br>• Show spinner awaiting `/api/train/status`.<br>• Set up WebSocket skeleton for future streaming.                                              | • Implement baseline PPO training loop:<br>  – Subscribe to `/drone/odom` and `/drone/camera/front/image_raw`.<br>  – Publish actions to `/drone/cmd_vel`.<br>  – Reward = –distance_to_goal.<br>  – Update every 64 steps.<br>  – Refactor logging into a unified metrics module (standardized JSON schema for reward breakdown and training stats) and log metrics to CSV/JSON ready for live streaming. |
 |   4  | Jun 4–10     | • Test simple "move to waypoint" scenario in Gazebo.<br>• Add downward-facing camera plugin for SLAM later.                                                           | • Connect `/api/train/start` to spawn background training job.<br>• Return `job_id` & set status to "started."<br>• Implement `/api/train/status` by reading JSON status file.                                                                                                | • Refactor to support `path_efficiency` reward.<br>• Accept `preset_id` from Jay's UI and use corresponding function.<br>• Validate that `path_efficiency_reward` changes logged rewards meaningfully.                                                                                                                                                                                                                                                                                                                                          |
 |   5  | Jun 11–17    | • Integrate PX4/MAVROS so Gazebo simulates real autopilot behavior.<br>• Finalize Mission Selector UI readiness.                                                      | • Build "Simulation Viewer": embed Gazebo camera feed via WebSocket or MJPEG.<br>• Add sliders for max velocity & acceleration, send to `/api/train/start`.                                                                                                                   | • Subscribe to downward camera, run simple SLAM (ORB-SLAM2 wrapper) to get altitude or 2D map.<br>• Implement `energy_efficiency_reward` penalizing throttle usage.<br>• Compare energy-efficiency vs. path-efficiency in small experiments.                                                                                                                                                                                                                                                                                                    |
@@ -117,36 +117,21 @@ Below are the **parameter categories** and **specific parameters** you'll need t
 
 *(Ahmad's RL code reads these; Jay shows sliders/inputs for user tuning; Uma ensures simulation publishes required state values.)*
 
-* **Distance-to-Goal Component**
+* **Path Following Component (Cross-Track Error)**
 
-  * *Weight₁*: 1.0
-  * *Goal tolerance radius*: 0.2 m
+  * *cross_track_weight*: 1.0
+  * *max_error*: 2.0 m
 
-* **Collision Penalty**
+* **Heading Error Component**
 
-  * *Collision_penalty*: –10.0
-  * *Near-obstacle penalty scale*: –(1/d²) if d < 0.5 m
-  * *Near-miss threshold*: 0.2 m (penalty –1.0)
+  * *heading_weight*: 0.1
+  * *max_heading_error*: π rad
 
-* **Smoothness / Jerk Penalty**
+* **Two-Term Reward Function**
 
-  * *Weight₂*: 0.3
-  * *Max_lin_jerk*: 0.5 m/s³
-  * *Max_ang_jerk*: 0.5 rad/s²
-
-* **Energy / Motor Usage Penalty**
-
-  * *Weight₃*: 0.2
-  * *Throttle threshold*: 0.7 (above means penalty)
-
-* **Time / Completion Bonus**
-
-  * *Time_penalty_rate*: –0.01 per timestep
-  * *Completion_bonus*: +5
-
-* **Multi-Objective Weights**
-
-  * *w₁ (distance)*, *w₂ (collision)*, *w₃ (energy)*, *w₄ (speed)*: sliders in Researcher mode
+  * Simple, educational approach combining path following and heading alignment
+  * Normalized components for consistent scaling
+  * Easy to understand and tune for beginners
 
 ### 5. RL Hyperparameters
 

@@ -145,18 +145,18 @@ The environment automatically integrates with registered reward functions:
 
 ```python
 # Using preset reward
-env = make_env("ros:deepflyer", reward_function="reach_target")
+env = make_env("ros:deepflyer", reward_function="follow_trajectory")
 
-# Using multi-objective reward
+# Using two-term reward with custom weights
 env = make_env(
     "ros:deepflyer", 
-    reward_function="multi_objective",
-    reward_weights={
-        'reach': 1.0,
-        'collision': 2.0,
-        'energy': 0.5,
-        'speed': 0.3
-    }
+    reward_function=create_cross_track_and_heading_reward(
+        cross_track_weight=1.5,    # Strong emphasis on path following
+        heading_weight=0.5,        # Moderate emphasis on heading
+        max_error=2.0,
+        max_heading_error=np.pi,
+        trajectory=[[0.0, 0.0, 1.5], [5.0, 5.0, 1.5]]  # Simple trajectory
+    )
 )
 ```
 
@@ -193,7 +193,7 @@ For development without Gazebo running:
 env = make_env("ros:deepflyer")
 
 # Or use CartPole with drone rewards for testing
-env = make_cartpole_with_reward("reach_target")
+env = make_cartpole_with_reward("follow_trajectory")
 ```
 
 ## Common Issues and Solutions
@@ -214,12 +214,12 @@ source /opt/ros/humble/setup.bash
 
 ```python
 from rl_agent.env import make_drone_env
-from rl_agent.models import PPOAgent
+from rl_agent.rewards import create_cross_track_and_heading_reward
 
 # Create environment
 env = make_drone_env(
     namespace="deepflyer",
-    reward_function="reach_target",
+    reward_function="follow_trajectory",
     goal_position=[8.0, 8.0, 1.5]
 )
 

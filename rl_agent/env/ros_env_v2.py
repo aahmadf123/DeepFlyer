@@ -51,8 +51,9 @@ class RosEnvV2(gym.Env):
     def __init__(
         self,
         namespace: str = "deepflyer",
-        reward_function: Optional[Union[str, Callable]] = "reach_target",
-        reward_weights: Optional[Dict[str, float]] = None,
+        reward_function: Optional[Union[str, Callable]] = "follow_trajectory",
+        cross_track_weight: float = 1.0,
+        heading_weight: float = 0.1,
         observation_config: Optional[Dict[str, bool]] = None,
         action_mode: str = "continuous",
         max_episode_steps: int = 500,
@@ -73,7 +74,8 @@ class RosEnvV2(gym.Env):
         Args:
             namespace: ROS2 namespace for topics
             reward_function: Reward function ID from registry or callable
-            reward_weights: Weights for multi-objective reward
+            cross_track_weight: Weight for cross-track error (path following)
+            heading_weight: Weight for heading error
             observation_config: Dict specifying which observations to include
             action_mode: "continuous" or "discrete" action space
             max_episode_steps: Maximum steps per episode
@@ -105,7 +107,7 @@ class RosEnvV2(gym.Env):
         self.external_force_range = external_force_range
         
         # Setup reward function
-        self._setup_reward_function(reward_function, reward_weights)
+        self._setup_reward_function(reward_function, cross_track_weight, heading_weight)
         
         # Task configuration  
         self.goal_position = np.array(goal_position) if goal_position else np.array([5.0, 5.0, 1.5])
@@ -180,31 +182,29 @@ class RosEnvV2(gym.Env):
         logger.info(f"RosEnvV2 initialized with namespace: {namespace}, reward: {reward_function}")
     
     def _setup_reward_function(
-        self, 
+        self,
         reward_function: Union[str, Callable],
-        reward_weights: Optional[Dict[str, float]]
+        cross_track_weight: float = 1.0,
+        heading_weight: float = 0.1,
     ):
-        """Setup reward function from registry or callable."""
-        if isinstance(reward_function, str):
-            if reward_function == "multi_objective" and reward_weights:
-                # Special case for multi-objective with weights
-                self.reward_function = lambda state, action: multi_objective_reward(
-                    state, action, reward_weights
-                )
-                self.reward_function_name = "multi_objective"
-            else:
-                # Get from registry
-                reward_info = RewardRegistry.get(reward_function)
-                if reward_info is None:
-                    raise ValueError(f"Unknown reward function: {reward_function}")
-                self.reward_function = reward_info['fn']
-                self.reward_function_name = reward_function
-        else:
-            # Custom callable
-            self.reward_function = reward_function
-            self.reward_function_name = "custom"
+        """
+        Set up reward function.
         
-        self.reward_weights = reward_weights or {}
+        Args:
+            reward_function: Reward function ID or callable
+            cross_track_weight: Weight for cross-track error (path following)
+            heading_weight: Weight for heading error
+        """
+        if isinstance(reward_function, str):
+            # Use registry to get function by ID
+            self.reward_fn = RewardRegistry.get_fn(reward_function)
+        else:
+            # Use provided callable
+            self.reward_fn = reward_function
+            
+        # Store weights for reward components
+        self.cross_track_weight = cross_track_weight
+        self.heading_weight = heading_weight
     
     def _spin_ros(self):
         """Spin ROS2 executor in background thread."""
@@ -499,8 +499,10 @@ class RosEnvV2(gym.Env):
                 self.goal_position = np.array(options['goal_position'])
             if 'target_altitude' in options:
                 self.target_altitude = options['target_altitude']
-            if 'reward_weights' in options:
-                self.reward_weights = options['reward_weights']
+            if 'cross_track_weight' in options:
+                self.cross_track_weight = options['cross_track_weight']
+            if 'heading_weight' in options:
+                self.heading_weight = options['heading_weight']
         
         # Apply domain randomization
         if self.domain_randomization:
@@ -511,7 +513,8 @@ class RosEnvV2(gym.Env):
             'episode_step': self.current_step,
             'goal_position': self.goal_position.tolist(),
             'target_altitude': self.target_altitude,
-            'reward_function': self.reward_function_name,
+            'cross_track_weight': self.cross_track_weight,
+            'heading_weight': self.heading_weight,
         }
         
         return observation, info
@@ -576,7 +579,7 @@ class RosEnvV2(gym.Env):
         reward_action = self.state_processor.process_action(action, self.action_mode)
         
         # Calculate reward using registered function
-        reward = float(self.reward_function(reward_state, reward_action))
+        reward = float(self.reward_fn(reward_state, reward_action))
         
         # Check termination conditions
         terminated = False

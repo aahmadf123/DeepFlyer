@@ -30,7 +30,7 @@ logger = logging.getLogger("test_safety_rewards")
 # Import our environment and safety/reward classes
 from rl_agent.env.mavros_env import MAVROSEnv, MAVROSExplorerEnv, MAVROSResearcherEnv
 from rl_agent.env.safety_layer import SafetyLayer, BeginnerSafetyLayer, SafetyBounds
-from rl_agent.rewards import RewardFunction, create_default_reward_function, REGISTRY
+from rl_agent.rewards import RewardFunction, REGISTRY, create_cross_track_and_heading_reward
 
 
 def test_safety_layer():
@@ -186,39 +186,41 @@ def test_reward_functions():
         enable_safety_layer=True,
     )
     
-    # Create a second environment with modified reward weights
-    custom_weights = {
-        'reach_target': 0.5,     # Less emphasis on goal
-        'avoid_crashes': 2.0,    # Much more emphasis on safety
-        'fly_steady': 1.0,       # More emphasis on smooth flight
-        'minimize_time': 0.0,    # No time pressure
-    }
-    
-    env2 = MAVROSEnv(
-        goal_position=[5.0, 5.0, 1.5],
-        enable_safety_layer=True,
-        custom_reward_weights=custom_weights,
+    # Create a third environment with a custom reward function
+    custom_reward = create_cross_track_and_heading_reward(
+        cross_track_weight=1.0,
+        heading_weight=0.1,
+        max_error=2.0,
+        max_heading_error=np.pi,
+        trajectory=[
+            np.array([0.0, 0.0, 1.5]),
+            np.array([2.5, 2.5, 1.5]),
+            np.array([5.0, 5.0, 1.5]),
+        ]
     )
     
-    # Create a third environment with a custom reward function
-    custom_reward = create_default_reward_function()
-    # Add trajectory following component
-    custom_reward.add_component("follow_trajectory", weight=1.0, 
-                               parameters={'trajectory': [
-                                   np.array([0.0, 0.0, 1.5]),
-                                   np.array([2.5, 2.5, 1.5]),
-                                   np.array([5.0, 5.0, 1.5]),
-                               ]})
-    
-    env3 = MAVROSEnv(
+    env2 = MAVROSEnv(
+        namespace="deepflyer",
+        observation_config={
+            'position': True,
+            'orientation': True,
+            'linear_velocity': True,
+            'angular_velocity': True,
+            'collision': True,
+            'obstacle_distance': True,
+            'goal_relative': True,
+        },
+        action_mode="continuous",
+        max_episode_steps=100,
+        step_duration=0.05,
         goal_position=[5.0, 5.0, 1.5],
         enable_safety_layer=True,
         reward_function=custom_reward,
     )
     
     # Test each environment with the same actions
-    envs = [env, env2, env3]
-    env_names = ["Default", "Safety-focused", "Trajectory-following"]
+    envs = [env, env2]
+    env_names = ["Default", "Trajectory-following"]
     
     results = []
     

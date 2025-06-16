@@ -23,8 +23,14 @@ logger = logging.getLogger(__name__)
 
 def make_env(
     env_id: str = "CartPole-v1",
-    reward_function: Optional[Union[str, Callable]] = None,
-    reward_weights: Optional[Dict[str, float]] = None,
+    seed: Optional[int] = None,
+    render_mode: Optional[str] = None,
+    max_episode_steps: int = 1000,
+    autoreset: bool = True,
+    record_video: bool = False,
+    video_folder: Optional[str] = None,
+    video_length: int = 0,
+    reward_function: str = "follow_trajectory",
     **kwargs
 ) -> gym.Env:
     """
@@ -32,8 +38,14 @@ def make_env(
     
     Args:
         env_id: Environment ID (Gymnasium ID or 'ros:namespace')
-        reward_function: Optional reward function ID or callable
-        reward_weights: Weights for multi-objective reward
+        seed: Random seed for the environment
+        render_mode: Render mode for the environment
+        max_episode_steps: Maximum steps per episode
+        autoreset: Whether to reset the environment after reaching the end of an episode
+        record_video: Whether to record video of the environment
+        video_folder: Folder to save video recordings
+        video_length: Length of video recordings
+        reward_function: Reward function ID or callable
         **kwargs: Additional arguments passed to environment constructor
     
     Returns:

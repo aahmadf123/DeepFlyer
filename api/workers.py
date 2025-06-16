@@ -30,7 +30,8 @@ def start_training_worker(cfg: Dict[str, Any]) -> str:
            '--algorithm', cfg['algorithm'],
            '--preset_id', cfg['preset_id'],
            '--hyperparameters', _serialize_arg(cfg['hyperparameters']),
-           '--reward_weights', _serialize_arg(cfg['reward_weights']),
+           '--cross_track_weight', str(cfg['cross_track_weight']),
+           '--heading_weight', str(cfg['heading_weight']),
            '--max_episodes', str(cfg['max_episodes']),
            '--max_steps_per_episode', str(cfg['max_steps_per_episode'])]
 
