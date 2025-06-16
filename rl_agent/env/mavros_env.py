@@ -2,6 +2,8 @@ import numpy as np
 from typing import Optional, Dict, Any, Tuple, List
 import time
 import logging
+import importlib.util
+import os
 
 from .ros_env import RosEnv, MAVROS_AVAILABLE
 from .safety_layer import SafetyLayer, BeginnerSafetyLayer, SafetyBounds
@@ -109,15 +111,27 @@ class MAVROSEnv(RosEnv):
         else:
             self.safety_layer = None
             
+        # Try to load user-defined reward function if present
+        user_reward_path = os.path.join(os.path.dirname(__file__), '../../scripts/user_reward.py')
+        if os.path.exists(user_reward_path):
+            spec = importlib.util.spec_from_file_location("user_reward", user_reward_path)
+            user_reward = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(user_reward)
+            user_defined_reward = getattr(user_reward, "reward", None)
+        else:
+            user_defined_reward = None
+        
         # Initialize reward function with placeholder if none provided
         if reward_function is None:
-            # Use the two-term reward: cross-track error + heading error
-            reward_function = create_cross_track_and_heading_reward(
-                cross_track_weight=1.0,
-                heading_weight=0.1,
-                max_error=2.0,
-                max_heading_error=np.pi
-            )
+            if user_defined_reward is not None:
+                reward_function = user_defined_reward
+            else:
+                reward_function = create_cross_track_and_heading_reward(
+                    cross_track_weight=1.0,
+                    heading_weight=0.1,
+                    max_error=2.0,
+                    max_heading_error=np.pi
+                )
         self.reward_function = reward_function
             
         # Store previous action for reward calculation
