@@ -10,6 +10,68 @@ import numpy as np
 from enum import Enum
 from typing import Dict, Any, Callable, Optional, Union
 
+# =============================================================================
+# USER REWARD FUNCTION - Edit this function to customize your drone's behavior
+# =============================================================================
+
+def reward_function(params):
+    """
+    DeepFlyer Reward Function
+    
+    Define how your drone gets rewarded for its actions.
+    The drone learns by trying to maximize this reward.
+    """
+    
+    # Read input parameters
+    distance_from_path = params['distance_from_path']
+    path_width = params['path_width']
+    on_path = params['on_path']
+    heading_error = params['heading_error']
+    altitude_error = params['altitude_error']
+    
+    # Reward values (feel free to adjust these)
+    HIGH_PATH_REWARD = 10.0         # Reward for staying very close to path
+    MEDIUM_PATH_REWARD = 5.0        # Reward for staying reasonably close to path
+    LOW_PATH_REWARD = 1.0           # Reward for barely staying on path
+    OFF_PATH_PENALTY = 0.001        # Penalty for going off path
+    
+    ALTITUDE_REWARD = 3.0           # Reward for correct altitude
+    ALTITUDE_PARTIAL_REWARD = 1.5   # Reward for close to correct altitude
+    
+    HEADING_REWARD = 2.0            # Reward for correct heading
+    HEADING_PARTIAL_REWARD = 1.0    # Reward for close to correct heading
+    
+    # Your settings (feel free to adjust these)
+    ALTITUDE_TOLERANCE = 0.5        # How close to target altitude (meters)
+    HEADING_TOLERANCE = 0.1         # How close to target heading (radians)
+    
+    # Calculate path following reward
+    path_reward = _calculate_path_reward(
+        distance_from_path, path_width, on_path,
+        HIGH_PATH_REWARD, MEDIUM_PATH_REWARD, LOW_PATH_REWARD, OFF_PATH_PENALTY
+    )
+    
+    # Calculate altitude reward
+    altitude_reward = _calculate_altitude_reward(
+        altitude_error, ALTITUDE_TOLERANCE, 
+        ALTITUDE_REWARD, ALTITUDE_PARTIAL_REWARD
+    )
+    
+    # Calculate heading reward  
+    heading_reward = _calculate_heading_reward(
+        heading_error, HEADING_TOLERANCE,
+        HEADING_REWARD, HEADING_PARTIAL_REWARD
+    )
+    
+    # Combine all rewards
+    total_reward = path_reward + altitude_reward + heading_reward
+    
+    return float(total_reward)
+
+# =============================================================================
+# SYSTEM CODE - Advanced users only
+# =============================================================================
+
 # Registry for reward functions
 REGISTRY = {}
 
@@ -171,4 +233,41 @@ def register_reward(name: str, reward_fn: Callable) -> None:
     }
 
 register_reward("follow_trajectory", follow_trajectory_reward)
-register_reward("heading_error", heading_error_reward) 
+register_reward("heading_error", heading_error_reward)
+
+def _calculate_path_reward(distance_from_path, path_width, on_path, HIGH_PATH_REWARD, MEDIUM_PATH_REWARD, LOW_PATH_REWARD, OFF_PATH_PENALTY):
+    """Calculate reward based on how close drone is to the path center."""
+    # Distance markers from center of path
+    marker_1 = 0.1 * path_width
+    marker_2 = 0.25 * path_width  
+    marker_3 = 0.4 * path_width
+    marker_4 = 0.5 * path_width
+    
+    if distance_from_path <= marker_1 and on_path:
+        return HIGH_PATH_REWARD
+    elif distance_from_path <= marker_2 and on_path:
+        return MEDIUM_PATH_REWARD
+    elif distance_from_path <= marker_3 and on_path:
+        return LOW_PATH_REWARD
+    elif distance_from_path <= marker_4 and on_path:
+        return 0.5 * LOW_PATH_REWARD
+    else:
+        return OFF_PATH_PENALTY
+
+def _calculate_altitude_reward(altitude_error, tolerance, ALTITUDE_REWARD, ALTITUDE_PARTIAL_REWARD):
+    """Calculate reward based on altitude accuracy."""
+    if abs(altitude_error) < tolerance:
+        return ALTITUDE_REWARD
+    elif abs(altitude_error) < tolerance * 2:
+        return ALTITUDE_PARTIAL_REWARD
+    else:
+        return 0.0
+
+def _calculate_heading_reward(heading_error, tolerance, HEADING_REWARD, HEADING_PARTIAL_REWARD):
+    """Calculate reward based on heading accuracy."""
+    if abs(heading_error) < tolerance:
+        return HEADING_REWARD
+    elif abs(heading_error) < tolerance * 3:
+        return HEADING_PARTIAL_REWARD
+    else:
+        return 0.0 
