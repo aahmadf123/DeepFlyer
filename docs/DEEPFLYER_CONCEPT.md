@@ -9,8 +9,12 @@
 - [Reward Function](#reward-function)
 - [Technical Implementation](#technical-implementation)
 - [Student Experience](#student-experience)
-- [Physical Setup Guide](#physical-setup-guide)
-- [Troubleshooting](#troubleshooting)
+  - [Physical Setup Guide](#physical-setup-guide)
+  - [Troubleshooting](#troubleshooting)
+- [ZED Mini Camera Integration](#zed-mini-camera-integration)
+- [Updated Observation Space for Hoop Navigation](#updated-observation-space-for-hoop-navigation)
+- [Updated Reward Function for Hoop Navigation](#updated-reward-function-for-hoop-navigation)
+- [Updated Action Space for Hoop Navigation](#updated-action-space-for-hoop-navigation)
 
 ## Overview
 
@@ -77,104 +81,295 @@ Lab Dimensions: 2.5m (L) × 2.0m (W) × 1.5m (H)
 
 ## Flight Path Design
 
-### Course Layout (Top View)
+### Hoop Navigation Course with Progressive Difficulty
+
+**Course Overview:**
+Based on the teammate's design sketch, DeepFlyer uses a **hoop-flying course** with progressive difficulty across multiple laps. This design better matches real-world drone racing and provides clearer visual targets for the RL agent.
+
 ```
-Y-axis (Width: 2.0m)
-2.0 ┌─────┬─────┬─────┬─────┬─────┐
-    │     │     │     │     │  F  │  F = Finish
-1.8 ├─────┼─────┼─────┼─────┼─────┤
-    │     │     │     │ W2  │     │  W2 = Waypoint 2
-1.6 ├─────┼─────┼─────┼─────┼─────┤
-    │     │     │     │     │     │
-1.4 ├─────┼─────┼─────┼─────┼─────┤
-    │     │ 📦  │     │ 🪑  │     │  📦🪑 = Obstacles
-1.2 ├─────┼─────┼─────┼─────┼─────┤
-    │     │     │ W1  │     │     │  W1 = Waypoint 1
-1.0 ├─────┼─────┼─────┼─────┼─────┤
-    │     │     │     │     │     │
-0.8 ├─────┼─────┼─────┼─────┼─────┤
-    │     │     │     │     │     │
-0.6 ├─────┼─────┼─────┼─────┼─────┤
-    │     │     │     │     │     │
-0.4 ├─────┼─────┼─────┼─────┼─────┤
-    │     │     │     │     │     │
-0.2 ├─────┼─────┼─────┼─────┼─────┤
-    │  S  │     │     │     │     │  S = Start
-0.0 └─────┴─────┴─────┴─────┴─────┘
-   0.0  0.5  1.0  1.5  2.0  2.5
-                X-axis (Length: 2.5m)
+Course Layout: Fixed 4-5 Hoop Circuit (Multiple Laps)
+Lab Space: 2.5m × 2.0m × 1.5m (existing lab constraints)
+
+Top View Layout:
+┌─────────────────────────────────────────┐
+│  Safety Buffer Zone (0.2m)              │
+│  ┌───────────────────────────────────┐  │
+│  │ Flight Zone: 2.1m × 1.6m         │  │
+│  │                                   │  │
+│  │  🔴 START/FINISH                   │  │
+│  │   ↓           ↑                   │  │
+│  │  ⭕(1) ──→ ⭕(2) ──→ ⭕(3)          │  │
+│  │   ↑           ↓     ↓             │  │
+│  │  ⭕(5) ←──── ⭕(4) ←─┘              │  │
+│  │   ↑         ↓                     │  │
+│  │   └─────────┘                     │  │
+│  │  (Circle back for next lap)       │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+
+Flight Pattern (Same course, multiple laps):
+Lap 1: START → ⭕(1) → ⭕(2) → ⭕(3) → ⭕(4) → ⭕(5) → back to ⭕(1)
+Lap 2: ⭕(1) → ⭕(2) → ⭕(3) → ⭕(4) → ⭕(5) → back to ⭕(1)  
+Lap 3: ⭕(1) → ⭕(2) → ⭕(3) → ⭕(4) → ⭕(5) → FINISH
+
+Course Progression:
+• Total Hoops: 5 fixed hoops (same layout throughout)
+• Total Laps: 3 complete circuits  
+• Flight Time: 2-3 minutes per episode
+• Difficulty: Speed and precision improvement over repeated laps
 ```
 
-### 3D Flight Path (Side View)
-```
-Height (Z-axis)
-1.5m ┌─────────────────────────────┐ ← Ceiling
-1.4m │ ⚠️  Safety Margin (0.1m)   │
-1.3m ├─────────────────────────────┤
-1.2m │ 🔴 Maximum Flight Height    │
-1.1m │                             │
-1.0m │     📦       🪑             │ ← Obstacle Height
-0.9m │                             │
-0.8m │ S─────●──────●─────●────F   │ ← Fixed Flight Altitude
-0.7m │                             │
-0.6m │                             │
-0.5m │ 🔴 Minimum Flight Height    │
-0.4m ├─────────────────────────────┤
-0.3m │ ⚠️  Safety Margin (0.1m)   │
-0.2m │                             │
-0.1m │                             │
-0.0m └─────────────────────────────┘ ← Floor
-     0    0.5   1.0   1.5   2.0  2.5m
-```
+### Hoop Specifications and Setup
 
-### Trajectory Coordinates
+**Physical Hoop Requirements:**
 ```python
-# Primary Flight Path (Fixed Altitude: 0.8m)
-FLIGHT_PATH = {
-    "start": (0.2, 0.2, 0.8),      # Start position
-    "waypoint_1": (1.0, 1.0, 0.8), # Navigate around first obstacle
-    "waypoint_2": (2.0, 1.6, 0.8), # Navigate around second obstacle  
-    "finish": (2.3, 1.8, 0.8),     # Finish position
-}
-
-# Obstacle Positions
-OBSTACLES = {
-    "box": (0.8, 1.2, 0.0, 0.4, 0.4, 1.0),    # x, y, z, width, depth, height
-    "chair": (1.8, 1.3, 0.0, 0.3, 0.3, 1.1),  # x, y, z, width, depth, height
-}
-
-# Safe Corridor (Virtual Track)
-TRACK_WIDTH = 0.4  # meters (corridor width around ideal path)
+class HoopCourse:
+    """
+    Fixed 5-hoop circuit for multi-lap navigation
+    """
+    def __init__(self, lab_dimensions):
+        self.lab_bounds = lab_dimensions
+        self.flight_altitude = 0.8  # meters
+        self.num_hoops = 5
+        
+        # Fixed hoop specifications (same for all hoops)
+        self.hoop_diameter = 0.8  # meters - challenging but achievable
+        
+        # Hoop materials
+        self.hoop_config = {
+            'material': 'lightweight_foam_pool_noodles',
+            'color': 'bright_orange',  # High contrast for vision
+            'mounting': 'adjustable_height_stands',
+            'safety': 'breakaway_connections'
+        }
+    
+    def generate_hoop_positions(self, spawn_position):
+        """Generate fixed 5-hoop circuit relative to drone spawn"""
+        # Circuit layout: rectangular path with 5 hoops
+        hoops = [
+            {
+                'id': 'hoop_1',
+                'position': (spawn_position[0] + 0.5, spawn_position[1] - 0.5, 0.8),
+                'diameter': self.hoop_diameter,
+                'sequence': 1
+            },
+            {
+                'id': 'hoop_2', 
+                'position': (spawn_position[0] + 1.0, spawn_position[1] - 0.5, 0.8),
+                'diameter': self.hoop_diameter,
+                'sequence': 2
+            },
+            {
+                'id': 'hoop_3',
+                'position': (spawn_position[0] + 1.5, spawn_position[1] + 0.0, 0.8),
+                'diameter': self.hoop_diameter,
+                'sequence': 3
+            },
+            {
+                'id': 'hoop_4',
+                'position': (spawn_position[0] + 1.0, spawn_position[1] + 0.5, 0.8),
+                'diameter': self.hoop_diameter,
+                'sequence': 4
+            },
+            {
+                'id': 'hoop_5',
+                'position': (spawn_position[0] + 0.5, spawn_position[1] + 0.0, 0.8),
+                'diameter': self.hoop_diameter,
+                'sequence': 5
+            }
+        ]
+        
+        return hoops
+    
+    def get_next_target_hoop(self, current_hoop_index):
+        """Get the next hoop in sequence (loops back to hoop 1 after hoop 5)"""
+        return (current_hoop_index + 1) % self.num_hoops
+        
+    def is_lap_complete(self, hoop_sequence):
+        """Check if drone has completed a full lap (passed through all 5 hoops)"""
+        return len(set(hoop_sequence[-5:])) == 5 if len(hoop_sequence) >= 5 else False
 ```
 
-### Course Variations
-Students can practice with different course configurations:
-
-**Beginner Course**: Single obstacle, wide corridor
+### Environment Detection and Setup
 ```python
-BEGINNER_PATH = {
-    "start": (0.2, 1.0, 0.8),
-    "waypoint_1": (1.2, 1.0, 0.8),
-    "finish": (2.3, 1.0, 0.8),
-}
-OBSTACLES = {"box": (1.2, 1.3, 0.0, 0.3, 0.3, 0.8)}
+def setup_hoop_course():
+    """
+    Automatically detect environment and set up hoop course.
+    Works in Gazebo simulation or real-world deployments.
+    """
+    # Get drone spawn position from ROS/Gazebo
+    spawn_pos = get_drone_spawn_position()  # From /gazebo/model_states or similar
+    
+    # Detect safe flight boundaries
+    flight_bounds = detect_flight_area()    # From depth sensors or pre-configured
+    
+    # Create hoop course
+    course = HoopCourse(flight_bounds)
+    hoops = course.generate_hoop_positions(spawn_pos)
+    
+    return hoops, course
+
+def get_drone_spawn_position():
+    """Get initial drone position from Gazebo or real sensors"""
+    # In Gazebo: Read from /gazebo/model_states
+    # In real world: Read from /mavros/local_position/pose
+    return (x, y, z)  # Actual spawn coordinates
+
+def detect_flight_area():
+    """Detect available flight space"""
+    # In Gazebo: Parse world file or use ray casting
+    # In real world: Use depth sensors or manual configuration
+    return {
+        'length': 2.1,  # Available flight length
+        'width': 1.6,   # Available flight width
+        'height': 1.2   # Maximum flight height
+    }
 ```
 
-**Advanced Course**: Multiple obstacles, narrow corridor
-```python
-ADVANCED_PATH = {
-    "start": (0.2, 0.3, 0.8),
-    "waypoint_1": (0.8, 1.0, 0.8),
-    "waypoint_2": (1.5, 0.5, 0.8),
-    "waypoint_3": (2.0, 1.5, 0.8),
-    "finish": (2.3, 1.0, 0.8),
-}
-OBSTACLES = {
-    "box1": (0.6, 0.6, 0.0, 0.2, 0.2, 0.9),
-    "box2": (1.2, 1.2, 0.0, 0.2, 0.2, 0.9),
-    "chair": (1.7, 0.8, 0.0, 0.3, 0.3, 1.1),
-}
+### Course Design Philosophy
+DeepFlyer uses a single, fixed 5-hoop circuit that the drone navigates repeatedly:
+
+**Course Parameters:**
+- **Path Type**: Fixed 5-hoop circuit with multi-lap navigation
+- **Total Hoops**: 5 fixed hoops (same positions throughout)
+- **Flight Height**: Consistent 0.8m above spawn level
+- **Hoop Size**: Uniform 0.8m diameter for all hoops
+- **Lap Structure**: Drone circles through same hoops multiple times
+
+**Why This Course Design:**
+1. **Consistency**: Same course layout for every lap - easy to compare performance
+2. **Simplicity**: Only need 5 physical hoops in lab setup
+3. **Progressive Improvement**: Students see speed and precision gains lap-over-lap
+4. **Real-world Relevance**: Similar to actual drone racing circuits
+5. **Educational Focus**: Emphasis on RL learning, not course complexity
+6. **Practical Setup**: Fits within standard lab space constraints
+
+### Course Layout Concept (Relative Design)
 ```
+Course Layout: Forward Path with Obstacles
+(Coordinates relative to spawn point)
+
+     START ──→ OBSTACLE 1 ──→ OBSTACLE 2 ──→ FINISH
+       │            │             │           │
+   (spawn + 0m)  (spawn + 3m)  (spawn + 6m) (spawn + 9m)
+   
+Side View:
+     📦 = Static obstacle (box/cylinder)
+     🚁 = Drone path (fixed altitude)
+     
+     ┌─────────────────────────────────────┐
+  1m │             📦        📦            │
+     │                                     │
+0.8m │ 🚁 ────────────────────────────→ 🚁 │ ← Fixed flight altitude
+     │                                     │
+  0m └─────────────────────────────────────┘
+     0m        3m        6m        9m
+```
+
+### Adaptive Course Configuration
+The course adapts to any environment (Gazebo worlds, real labs, different spaces) by using relative positioning:
+
+```python
+# Environment-Agnostic Course Design
+class AdaptiveCourse:
+    def __init__(self, spawn_position, environment_bounds):
+        self.spawn_pos = spawn_position  # Where drone starts (from Gazebo/ROS)
+        self.bounds = environment_bounds  # Safe flight area detected
+        
+    def generate_course(self):
+        """Generate course relative to spawn position"""
+        # Course parameters (relative distances)
+        FORWARD_DISTANCE = 9.0      # Total course length
+        OBSTACLE_SPACING = 3.0      # Distance between obstacles
+        FLIGHT_HEIGHT = 0.8         # Height above spawn level
+        
+        # Generate waypoints relative to spawn
+        waypoints = []
+        for i in range(4):  # Start + 2 obstacles + finish
+            distance = i * OBSTACLE_SPACING
+            waypoint = {
+                'x': self.spawn_pos[0] + distance,
+                'y': self.spawn_pos[1],  # Straight line
+                'z': self.spawn_pos[2] + FLIGHT_HEIGHT
+            }
+            waypoints.append(waypoint)
+        
+        return waypoints
+    
+    def place_obstacles(self):
+        """Place obstacles relative to path"""
+        obstacles = [
+            {
+                'position': (self.spawn_pos[0] + 3.0, self.spawn_pos[1] + 1.0, 0),
+                'type': 'cylinder',
+                'radius': 0.3,
+                'height': 1.0
+            },
+            {
+                'position': (self.spawn_pos[0] + 6.0, self.spawn_pos[1] - 1.0, 0),
+                'type': 'box',
+                'dimensions': [0.4, 0.4, 1.0]
+            }
+        ]
+        return obstacles
+```
+
+### Environment Detection and Setup
+```python
+def setup_environment():
+    """
+    Automatically detect environment and set up course.
+    Works in Gazebo simulation or real-world deployments.
+    """
+    # Get drone spawn position from ROS/Gazebo
+    spawn_pos = get_drone_spawn_position()  # From /gazebo/model_states or similar
+    
+    # Detect safe flight boundaries
+    flight_bounds = detect_flight_area()    # From depth sensors or pre-configured
+    
+    # Create adaptive course
+    course = AdaptiveCourse(spawn_pos, flight_bounds)
+    waypoints = course.generate_course()
+    obstacles = course.place_obstacles()
+    
+    return waypoints, obstacles
+
+def get_drone_spawn_position():
+    """Get initial drone position from Gazebo or real sensors"""
+    # In Gazebo: Read from /gazebo/model_states
+    # In real world: Read from /mavros/local_position/pose
+    return (x, y, z)  # Actual spawn coordinates
+
+def detect_flight_area():
+    """Detect available flight space"""
+    # In Gazebo: Parse world file or use ray casting
+    # In real world: Use depth sensors or manual configuration
+    return {
+        'x_min': spawn_x - 1.0,
+        'x_max': spawn_x + 10.0,
+        'y_min': spawn_y - 2.0, 
+        'y_max': spawn_y + 2.0,
+        'z_min': 0.5,
+        'z_max': 2.0
+    }
+```
+
+### Standard Course Design (One Configuration)
+DeepFlyer uses a single, well-tested course configuration that adapts to any environment:
+
+**Course Parameters:**
+- **Path Type**: Straight line with obstacle avoidance
+- **Total Distance**: 9 meters forward from spawn
+- **Obstacles**: 2 static objects requiring lateral maneuvering
+- **Flight Height**: 0.8m above spawn level
+- **Corridor Width**: 1.0m (allowing for obstacle avoidance)
+
+**Why One Course Design:**
+1. **Consistency**: All students learn on the same challenge
+2. **Focus**: Concentrate on RL concepts, not course complexity
+3. **Comparison**: Easy to compare different reward functions
+4. **Safety**: Well-tested configuration with known safety margins
+5. **Simplicity**: Easier to troubleshoot and maintain
 
 ## Action Space Design
 
@@ -234,69 +429,84 @@ def process_action(action):
 
 ## Reward Function
 
-### Student-Facing Interface
+### Student-Facing Reward Function
 ```python
 def reward_function(params):
     """
-    DeepFlyer Reward Function - Train your drone to navigate safely!
+    DeepFlyer Hoop Navigation Reward Function
+    Students can modify these values or completely rewrite this function
     """
-    # Read sensor data
-    distance_from_path = params['distance_from_path']
-    path_width = params['path_width']
-    on_path = params['on_path']
-    heading_error = params['heading_error']
-    altitude_error = params['altitude_error']
-    obstacle_distance = params['obstacle_distance']
     
-    # Reward values (students can adjust these)
-    HIGH_PATH_REWARD = 10.0      # Staying very close to ideal path
-    MEDIUM_PATH_REWARD = 5.0     # Staying reasonably close
-    LOW_PATH_REWARD = 1.0        # Barely staying on path
-    OFF_PATH_PENALTY = 0.001     # Going off the safe corridor
+    # === STUDENT-MODIFIABLE PARAMETERS ===
     
-    ALTITUDE_REWARD = 3.0        # Correct altitude
-    HEADING_REWARD = 2.0         # Facing the right direction
+    # Hoop Navigation Rewards
+    HOOP_APPROACH_REWARD = 10.0      # Getting closer to target hoop
+    HOOP_PASSAGE_REWARD = 50.0       # Successfully passing through hoop
+    HOOP_CENTER_BONUS = 20.0         # Passing through center of hoop
+    VISUAL_ALIGNMENT_REWARD = 5.0    # Keeping hoop centered in camera view
     
-    OBSTACLE_NEAR_PENALTY = -5.0 # Getting too close to obstacles
-    COLLISION_PENALTY = -50.0    # Hitting something
-    COMPLETION_BONUS = 20.0      # Reaching the finish
+    # Speed and Efficiency
+    FORWARD_PROGRESS_REWARD = 3.0    # Making progress toward goal
+    SPEED_EFFICIENCY_BONUS = 2.0     # Maintaining good speed
     
-    # Calculate path following reward
-    if distance_from_path <= 0.1 * path_width and on_path:
-        path_reward = HIGH_PATH_REWARD
-    elif distance_from_path <= 0.25 * path_width and on_path:
-        path_reward = MEDIUM_PATH_REWARD
-    elif distance_from_path <= 0.5 * path_width and on_path:
-        path_reward = LOW_PATH_REWARD
-    else:
-        path_reward = OFF_PATH_PENALTY
+    # Lap Completion Bonuses
+    LAP_COMPLETION_BONUS = 100.0     # Completing a full lap (5 hoops)
+    COURSE_COMPLETION_BONUS = 500.0  # Completing all 3 laps
     
-    # Altitude bonus (within 10cm of target)
-    altitude_reward = ALTITUDE_REWARD if abs(altitude_error) < 0.1 else 0.0
+    # Safety Penalties
+    HOOP_MISS_PENALTY = -25.0        # Flying around instead of through hoop
+    COLLISION_PENALTY = -100.0       # Hitting hoop or obstacle
+    SLOW_PROGRESS_PENALTY = -1.0     # Taking too long
     
-    # Heading bonus (pointing forward)
-    heading_reward = HEADING_REWARD if abs(heading_error) < 0.2 else 0.0
+    # === REWARD CALCULATION ===
     
-    # Obstacle avoidance
-    obstacle_reward = 0.0
-    if obstacle_distance < 0.3:  # Too close!
-        obstacle_reward = OBSTACLE_NEAR_PENALTY
-    elif obstacle_distance < 0.15:  # Collision!
-        obstacle_reward = COLLISION_PENALTY
+    total_reward = 0.0
     
-    # Combine all rewards
-    total_reward = path_reward + altitude_reward + heading_reward + obstacle_reward
+    # Hoop approach reward
+    if params.get('approaching_hoop', False):
+        total_reward += HOOP_APPROACH_REWARD
+    
+    # Hoop passage rewards
+    if params.get('hoop_passed', False):
+        total_reward += HOOP_PASSAGE_REWARD
+        if params.get('center_passage', False):
+            total_reward += HOOP_CENTER_BONUS
+    
+    # Visual alignment
+    hoop_alignment = params.get('hoop_alignment', 0.0)
+    if abs(hoop_alignment) < 0.2:  # Well centered
+        total_reward += VISUAL_ALIGNMENT_REWARD
+    
+    # Progress rewards
+    if params.get('making_progress', False):
+        total_reward += FORWARD_PROGRESS_REWARD
+    
+    # Completion bonuses
+    if params.get('lap_completed', False):
+        total_reward += LAP_COMPLETION_BONUS
+    if params.get('course_completed', False):
+        total_reward += COURSE_COMPLETION_BONUS
+    
+    # Penalties
+    if params.get('missed_hoop', False):
+        total_reward += HOOP_MISS_PENALTY
+    if params.get('collision', False):
+        total_reward += COLLISION_PENALTY
+    if params.get('slow_progress', False):
+        total_reward += SLOW_PROGRESS_PENALTY
     
     return float(total_reward)
 ```
 
-### Reward Engineering Learning
-Students learn RL concepts by adjusting reward parameters:
+### How Students Learn
+Students experiment with different reward values to see how drone behavior changes:
 
-1. **Path Following**: Increase `HIGH_PATH_REWARD` → drone stays closer to center
-2. **Risk Taking**: Decrease `OBSTACLE_NEAR_PENALTY` → drone flies closer to obstacles
-3. **Speed vs Safety**: Balance completion bonus vs collision penalty
-4. **Smooth Flying**: Add penalties for jerky movements
+1. **Increase `HOOP_PASSAGE_REWARD`** → Drone prioritizes getting through hoops
+2. **Increase `SPEED_EFFICIENCY_BONUS`** → Drone flies faster but may be less precise
+3. **Increase `HOOP_CENTER_BONUS`** → Drone aims for center of hoops
+4. **Adjust penalties** → Change risk-taking behavior
+
+Students can also completely rewrite the reward function with their own logic.
 
 ## Technical Implementation
 
@@ -347,33 +557,27 @@ observation = {
 
 ## Student Experience
 
-### Learning Progression
+### Simple Learning Approach
 
-**Week 1: Introduction**
-- Watch demonstration flights
-- Understand reward function basics
-- Modify simple parameters (path rewards)
+Students receive a working DeepFlyer system with a single reward function they can modify. Like AWS DeepRacer, the focus is entirely on understanding how reward changes affect drone behavior.
 
-**Week 2: Obstacle Avoidance**
-- Add obstacles to course
-- Adjust obstacle penalties
-- Learn risk vs reward balance
+**What Students Do:**
+- Modify reward function parameters (or rewrite entirely if desired)
+- Train RL agent with their reward function
+- Test drone behavior in simulation and real flight
+- Iterate and improve based on results
 
-**Week 3: Advanced Tuning**
-- Multi-objective optimization
-- Speed vs safety tradeoffs  
-- Course design challenges
-
-**Week 4: Competition**
-- Design custom courses
-- Optimize for different metrics
-- Present findings
+**What Students Learn:**
+- How reward design affects AI behavior
+- Trial-and-error optimization
+- Real-world AI system constraints
+- Reinforcement learning concepts through experimentation
 
 ### Assessment Metrics
-- **Navigation Success**: Completion rate
+- **Navigation Success**: Hoop completion rate
 - **Efficiency**: Time to complete course
 - **Safety**: Collision avoidance
-- **Understanding**: Reward function explanations
+- **Understanding**: Reward function design decisions
 
 ## Physical Setup Guide
 
@@ -400,26 +604,45 @@ observation = {
 
 **3. Course Setup**
 ```python
-def setup_course(difficulty="beginner"):
+def setup_physical_course(lab_dimensions):
     """
-    Physical course setup instructions.
-    """
-    if difficulty == "beginner":
-        obstacles = [
-            {"type": "foam_block", "position": (1.2, 1.0), "size": "30x30x80cm"}
-        ]
-    elif difficulty == "intermediate":
-        obstacles = [
-            {"type": "foam_block", "position": (0.8, 1.2), "size": "20x20x60cm"},
-            {"type": "hanging_ball", "position": (1.8, 0.8), "height": "1.0m"}
-        ]
-    elif difficulty == "advanced":
-        obstacles = [
-            {"type": "moving_obstacle", "path": "pendulum", "speed": "slow"},
-            {"type": "narrow_gate", "position": (1.5, 1.0), "width": "50cm"}
-        ]
+    Set up the standard DeepFlyer course in any lab space.
     
-    return obstacles
+    Args:
+        lab_dimensions: (length, width, height) of available space
+    """
+    # Ensure minimum space requirements
+    min_length, min_width, min_height = 10.0, 4.0, 2.5
+    if any(lab_dimensions[i] < [min_length, min_width, min_height][i] for i in range(3)):
+        raise ValueError("Lab space too small for DeepFlyer course")
+    
+    # Calculate course layout relative to lab center
+    lab_center = (lab_dimensions[0]/2, lab_dimensions[1]/2, 0)
+    
+    # Standard obstacle placement (relative to center)
+    obstacles = [
+        {
+            "type": "foam_cylinder",
+            "position": (lab_center[0] - 1.5, lab_center[1] + 0.8, 0),
+            "dimensions": {"radius": 0.3, "height": 1.0},
+            "safety_clearance": 0.5
+        },
+        {
+            "type": "foam_box", 
+            "position": (lab_center[0] + 1.5, lab_center[1] - 0.8, 0),
+            "dimensions": {"width": 0.4, "depth": 0.4, "height": 1.0},
+            "safety_clearance": 0.5
+        }
+    ]
+    
+    # Define flight corridor
+    flight_path = {
+        "start": (lab_center[0] - 4.0, lab_center[1], 0.8),
+        "finish": (lab_center[0] + 4.0, lab_center[1], 0.8),
+        "corridor_width": 1.0
+    }
+    
+    return obstacles, flight_path
 ```
 
 ### Calibration Procedure
@@ -498,6 +721,544 @@ rosrun deepflyer setup_mocap.py --drone_id 1 --marker_config rigid_body.yaml
 - Sensor fusion optimization
 - Latency minimization
 - Robust state estimation
+
+
+
+## ZED Mini Camera Integration
+
+### Computer Vision System for Hoop Detection
+
+**Why ZED Mini Camera:**
+The teammate specified using a **ZED mini camera**, which provides several advantages for educational drone RL:
+
+- **Stereo Vision**: Provides depth information for accurate hoop distance measurement
+- **High Frame Rate**: 100 FPS capability for real-time RL feedback
+- **Compact Size**: Fits on educational drones without affecting flight dynamics
+- **SDK Integration**: Easy ROS2 integration for real-time processing
+
+### Camera Setup and Configuration
+
+```python
+class ZEDMiniVisionSystem:
+    """
+    ZED Mini camera integration for hoop detection and navigation
+    """
+    
+    def __init__(self, config):
+        # ZED Mini configuration
+        self.camera_config = {
+            'resolution': 'HD720',     # 1280x720 for good performance
+            'fps': 60,                 # High enough for RL, not too demanding
+            'depth_mode': 'PERFORMANCE', # Balance speed vs quality
+            'coordinate_system': 'RIGHT_HANDED_Z_UP'
+        }
+        
+        # Vision processing parameters
+        self.hoop_detection = {
+            'color_range': {
+                'lower_orange': [5, 100, 100],   # HSV for orange hoops
+                'upper_orange': [25, 255, 255]
+            },
+            'min_contour_area': 500,
+            'max_contour_area': 50000,
+            'min_circularity': 0.3  # Hoops from angles may not be perfect circles
+        }
+        
+        # RL integration
+        self.rl_features = {
+            'hoop_center_pixel': None,      # [u, v] in image coordinates
+            'hoop_distance': None,          # Meters from ZED depth
+            'hoop_diameter': None,          # Detected diameter in pixels
+            'hoop_alignment': None,         # How centered the hoop is
+            'next_hoop_visible': False      # Is next target visible?
+        }
+    
+    def process_frame(self, zed_image, zed_depth):
+        """
+        Process ZED Mini camera frame to extract hoop information for RL
+        
+        Args:
+            zed_image: RGB image from ZED Mini
+            zed_depth: Depth map from ZED Mini
+            
+        Returns:
+            vision_features: Processed features for RL agent
+        """
+        import cv2
+        import numpy as np
+        
+        # Convert to HSV for color detection
+        hsv = cv2.cvtColor(zed_image, cv2.COLOR_BGR2HSV)
+        
+        # Create mask for orange hoops
+        mask = cv2.inRange(hsv, 
+                          np.array(self.hoop_detection['color_range']['lower_orange']),
+                          np.array(self.hoop_detection['color_range']['upper_orange']))
+        
+        # Find contours
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Filter and rank contours by area and circularity
+        valid_hoops = []
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if self.hoop_detection['min_contour_area'] < area < self.hoop_detection['max_contour_area']:
+                # Check circularity
+                perimeter = cv2.arcLength(contour, True)
+                if perimeter > 0:
+                    circularity = 4 * np.pi * area / (perimeter ** 2)
+                    if circularity > self.hoop_detection['min_circularity']:
+                        # Extract hoop features
+                        center, radius = cv2.minEnclosingCircle(contour)
+                        center_int = (int(center[0]), int(center[1]))
+                        
+                        # Get depth at hoop center
+                        depth_value = zed_depth[center_int[1], center_int[0]]
+                        
+                        if depth_value > 0:  # Valid depth measurement
+                            valid_hoops.append({
+                                'center': center,
+                                'radius': radius,
+                                'depth': depth_value,
+                                'area': area,
+                                'circularity': circularity
+                            })
+        
+        # Find closest/largest hoop (current target)
+        if valid_hoops:
+            # Sort by size (closer/larger hoops are likely current targets)
+            target_hoop = max(valid_hoops, key=lambda h: h['area'])
+            
+            # Calculate RL features
+            image_center = (zed_image.shape[1] // 2, zed_image.shape[0] // 2)
+            
+            self.rl_features = {
+                'hoop_center_pixel': target_hoop['center'],
+                'hoop_distance': target_hoop['depth'] / 1000.0,  # Convert mm to m
+                'hoop_diameter_pixels': target_hoop['radius'] * 2,
+                'hoop_alignment': self.calculate_alignment(target_hoop['center'], image_center),
+                'next_hoop_visible': len(valid_hoops) > 1,
+                'hoop_area_ratio': target_hoop['area'] / (zed_image.shape[0] * zed_image.shape[1])
+            }
+        else:
+            # No hoop detected
+            self.rl_features = {
+                'hoop_center_pixel': None,
+                'hoop_distance': float('inf'),
+                'hoop_diameter_pixels': 0,
+                'hoop_alignment': 0.0,
+                'next_hoop_visible': False,
+                'hoop_area_ratio': 0.0
+            }
+        
+        return self.rl_features
+    
+    def calculate_alignment(self, hoop_center, image_center):
+        """
+        Calculate how well aligned the drone is with the hoop center
+        
+        Returns:
+            alignment: -1.0 (far left) to 1.0 (far right), 0.0 = centered
+        """
+        if hoop_center is None:
+            return 0.0
+        
+        horizontal_offset = hoop_center[0] - image_center[0]
+        max_offset = image_center[0]  # Half of image width
+        
+        return np.clip(horizontal_offset / max_offset, -1.0, 1.0)
+```
+
+### ROS2 Integration for ZED Mini
+
+```python
+class ZEDMiniROS2Node(Node):
+    """
+    ROS2 node for ZED Mini camera integration with DeepFlyer
+    """
+    
+    def __init__(self):
+        super().__init__('zed_mini_deepflyer')
+        
+        # Initialize ZED Mini
+        self.vision_system = ZEDMiniVisionSystem(config)
+        
+        # Publishers for vision data
+        self.vision_features_pub = self.create_publisher(
+            VisionFeatures, '/deepflyer/vision_features', 10)
+        
+        # ZED Mini image subscribers (from ZED ROS2 wrapper)
+        self.image_sub = self.create_subscription(
+            Image, '/zed_mini/zed_node/rgb/image_rect_color', 
+            self.image_callback, 10)
+        self.depth_sub = self.create_subscription(
+            Image, '/zed_mini/zed_node/depth/depth_registered', 
+            self.depth_callback, 10)
+        
+        # Synchronize image and depth
+        self.latest_image = None
+        self.latest_depth = None
+        
+        # Processing timer
+        self.create_timer(0.033, self.process_vision)  # 30 Hz processing
+    
+    def image_callback(self, msg):
+        """Store latest RGB image"""
+        self.latest_image = self.cv_bridge.imgmsg_to_cv2(msg, 'bgr8')
+    
+    def depth_callback(self, msg):
+        """Store latest depth image"""
+        self.latest_depth = self.cv_bridge.imgmsg_to_cv2(msg, 'passthrough')
+    
+    def process_vision(self):
+        """Process vision data and publish features for RL agent"""
+        if self.latest_image is not None and self.latest_depth is not None:
+            # Process frame for hoop detection
+            features = self.vision_system.process_frame(
+                self.latest_image, self.latest_depth)
+            
+            # Convert to ROS2 message
+            msg = VisionFeatures()
+            msg.timestamp = self.get_clock().now().to_msg()
+            
+            if features['hoop_center_pixel'] is not None:
+                msg.hoop_detected = True
+                msg.hoop_center_u = features['hoop_center_pixel'][0]
+                msg.hoop_center_v = features['hoop_center_pixel'][1]
+                msg.hoop_distance = features['hoop_distance']
+                msg.hoop_alignment = features['hoop_alignment']
+                msg.hoop_diameter_pixels = features['hoop_diameter_pixels']
+                msg.next_hoop_visible = features['next_hoop_visible']
+                msg.hoop_area_ratio = features['hoop_area_ratio']
+            else:
+                msg.hoop_detected = False
+                msg.hoop_distance = float('inf')
+                msg.hoop_alignment = 0.0
+            
+            self.vision_features_pub.publish(msg)
+```
+
+## Updated Observation Space for Hoop Navigation
+
+### Enhanced State Representation
+
+The observation space is updated to include visual information from the ZED Mini camera alongside traditional flight telemetry:
+
+```python
+class HoopNavigationObservationProcessor:
+    """
+    Enhanced observation processor for hoop navigation with ZED Mini integration
+    """
+    
+    def __init__(self, config):
+        self.course_hoops = config.course_hoops
+        self.current_target_hoop = 0
+        self.lap_number = 1
+        
+        # Observation space: 12-dimensional vector
+        self.observation_dim = 12
+        
+    def process_observation(self, px4_data, vision_data, course_state):
+        """
+        Create RL observation from drone telemetry and vision data
+        
+        Args:
+            px4_data: Flight controller data (position, velocity, etc.)
+            vision_data: ZED Mini processed features
+            course_state: Current course progress information
+            
+        Returns:
+            observation: 12-element normalized vector for RL agent
+        """
+        # Extract current position and velocity
+        pos = np.array([px4_data.x, px4_data.y, px4_data.z])
+        vel = np.array([px4_data.vx, px4_data.vy, px4_data.vz])
+        
+        # Get current target hoop information
+        target_hoop = self.course_hoops[self.current_target_hoop]
+        target_pos = np.array(target_hoop['position'])
+        
+        # Calculate navigation features
+        distance_to_hoop = np.linalg.norm(pos - target_pos)
+        direction_to_hoop = (target_pos - pos) / max(distance_to_hoop, 0.01)
+        
+        # Velocity alignment with target direction
+        velocity_magnitude = np.linalg.norm(vel)
+        velocity_alignment = np.dot(vel, direction_to_hoop) / max(velocity_magnitude, 0.01)
+        
+        # Vision-based features (from ZED Mini)
+        hoop_alignment = vision_data.get('hoop_alignment', 0.0)
+        hoop_distance_vision = vision_data.get('hoop_distance', float('inf'))
+        hoop_visible = 1.0 if vision_data.get('hoop_detected', False) else 0.0
+        hoop_size_ratio = vision_data.get('hoop_area_ratio', 0.0)
+        
+        # Course progress features  
+        progress_in_lap = self.current_target_hoop % 3  # 3 hoops per lap
+        lap_progress = (self.lap_number - 1) / 3.0      # 3 total laps
+        
+        # Construct normalized observation vector
+        observation = np.array([
+            # Position relative to target (3 dimensions)
+            np.clip(direction_to_hoop[0], -1.0, 1.0),          # 0: X direction to hoop
+            np.clip(direction_to_hoop[1], -1.0, 1.0),          # 1: Y direction to hoop  
+            np.clip((target_pos[2] - pos[2]) / 2.0, -1.0, 1.0), # 2: Z direction to hoop
+            
+            # Velocity information (2 dimensions)
+            np.clip(vel[0] / 2.0, -1.0, 1.0),                  # 3: Forward velocity
+            np.clip(vel[1] / 2.0, -1.0, 1.0),                  # 4: Lateral velocity
+            
+            # Navigation metrics (2 dimensions)
+            np.clip(distance_to_hoop / 5.0, 0.0, 1.0),         # 5: Distance to target
+            np.clip(velocity_alignment, -1.0, 1.0),            # 6: Velocity alignment
+            
+            # Vision-based features (3 dimensions)
+            np.clip(hoop_alignment, -1.0, 1.0),                # 7: Visual hoop alignment
+            np.clip(hoop_distance_vision / 5.0, 0.0, 1.0),     # 8: Visual distance to hoop
+            hoop_visible,                                       # 9: Hoop visibility (0 or 1)
+            
+            # Course progress (2 dimensions)
+            progress_in_lap / 2.0,                              # 10: Progress within current lap
+            lap_progress                                        # 11: Overall course progress
+        ], dtype=np.float32)
+        
+        return observation
+    
+    def update_target_hoop(self, current_position, threshold=0.5):
+        """
+        Update target hoop when drone passes through current target
+        
+        Args:
+            current_position: Current drone position
+            threshold: Distance threshold for hoop passage (meters)
+        """
+        target_hoop = self.course_hoops[self.current_target_hoop]
+        target_pos = np.array(target_hoop['position'])
+        
+        distance = np.linalg.norm(current_position - target_pos)
+        
+        if distance < threshold:
+            # Drone passed through hoop
+            self.current_target_hoop += 1
+            
+            # Check if lap completed
+            if self.current_target_hoop % 3 == 0:
+                self.lap_number += 1
+                
+            # Check if course completed
+            if self.current_target_hoop >= len(self.course_hoops):
+                return True  # Episode complete
+                
+        return False  # Continue episode
+```
+
+## Updated Reward Function for Hoop Navigation
+
+### Multi-Component Reward System
+
+The reward function is completely redesigned for hoop navigation, incorporating both traditional flight metrics and visual navigation success:
+
+```python
+def hoop_navigation_reward_function(params):
+    """
+    DeepFlyer Hoop Navigation Reward Function
+    
+    Students can modify these parameters to change drone behavior:
+    """
+    
+    # === STUDENT-CONFIGURABLE PARAMETERS ===
+    
+    # Hoop Navigation Rewards
+    HOOP_APPROACH_REWARD = 10.0      # Getting closer to target hoop
+    HOOP_PASSAGE_REWARD = 50.0       # Successfully passing through hoop
+    HOOP_CENTER_BONUS = 20.0         # Passing through center of hoop
+    VISUAL_ALIGNMENT_REWARD = 5.0    # Keeping hoop centered in camera view
+    
+    # Speed and Efficiency
+    FORWARD_PROGRESS_REWARD = 3.0    # Making progress toward goal
+    SPEED_EFFICIENCY_BONUS = 2.0     # Maintaining good speed
+    
+    # Lap Completion Bonuses
+    LAP_COMPLETION_BONUS = 100.0     # Completing a full lap
+    COURSE_COMPLETION_BONUS = 500.0  # Completing all 3 laps
+    
+    # Precision and Style
+    SMOOTH_FLIGHT_BONUS = 1.0        # Smooth, non-jerky movements
+    PRECISION_BONUS = 15.0           # Passing through smaller hoops
+    
+    # === PENALTIES (Students can adjust severity) ===
+    
+    # Navigation Penalties
+    WRONG_DIRECTION_PENALTY = -2.0   # Flying away from target
+    HOOP_MISS_PENALTY = -25.0        # Flying around instead of through hoop
+    COLLISION_PENALTY = -100.0       # Hitting hoop or obstacle
+    
+    # Efficiency Penalties
+    SLOW_PROGRESS_PENALTY = -1.0     # Taking too long
+    ERRATIC_FLIGHT_PENALTY = -3.0    # Jerky, unstable flight
+    
+    # === SAFETY PENALTIES (NOT student-configurable) ===
+    BOUNDARY_VIOLATION = -200.0      # Flying outside safe area
+    EMERGENCY_LANDING = -500.0       # Emergency stop triggered
+    
+    # === REWARD CALCULATION ===
+    
+    total_reward = 0.0
+    
+    # 1. Hoop Navigation Component
+    distance_to_hoop = params['distance_to_target_hoop']
+    previous_distance = params.get('previous_distance_to_hoop', distance_to_hoop)
+    
+    # Reward for approaching hoop
+    if distance_to_hoop < previous_distance:
+        approach_reward = HOOP_APPROACH_REWARD * (previous_distance - distance_to_hoop)
+        total_reward += approach_reward
+    
+    # Bonus for hoop passage
+    if params.get('hoop_passed', False):
+        total_reward += HOOP_PASSAGE_REWARD
+        
+        # Extra bonus for center passage
+        passage_accuracy = params.get('passage_accuracy', 0.5)  # 0-1, 1=perfect center
+        if passage_accuracy > 0.8:
+            total_reward += HOOP_CENTER_BONUS
+    
+    # 2. Visual Navigation Component (ZED Mini integration)
+    hoop_alignment = params.get('hoop_alignment', 0.0)  # -1 to 1, 0=centered
+    if abs(hoop_alignment) < 0.2:  # Well centered
+        total_reward += VISUAL_ALIGNMENT_REWARD
+    
+    hoop_visible = params.get('hoop_visible', False)
+    if not hoop_visible and distance_to_hoop < 2.0:  # Should see hoop when close
+        total_reward += WRONG_DIRECTION_PENALTY
+    
+    # 3. Flight Efficiency Component
+    forward_velocity = params.get('forward_velocity', 0.0)
+    if forward_velocity > 0.3:  # Good forward progress
+        total_reward += FORWARD_PROGRESS_REWARD
+        
+    speed = params.get('speed', 0.0)
+    if 0.4 < speed < 0.8:  # Optimal speed range
+        total_reward += SPEED_EFFICIENCY_BONUS
+    
+    # 4. Precision Component
+    hoop_diameter = params.get('current_hoop_diameter', 1.0)
+    precision_factor = max(0.0, (1.1 - hoop_diameter) / 0.6)  # Higher reward for smaller hoops
+    if params.get('hoop_passed', False):
+        total_reward += PRECISION_BONUS * precision_factor
+    
+    # 5. Lap and Course Progress
+    if params.get('lap_completed', False):
+        total_reward += LAP_COMPLETION_BONUS
+        
+    if params.get('course_completed', False):
+        total_reward += COURSE_COMPLETION_BONUS
+    
+    # 6. Flight Quality Assessment
+    acceleration_magnitude = params.get('acceleration_magnitude', 0.0)
+    if acceleration_magnitude < 0.5:  # Smooth flight
+        total_reward += SMOOTH_FLIGHT_BONUS
+    else:  # Jerky flight
+        total_reward += ERRATIC_FLIGHT_PENALTY
+    
+    # 7. Penalties
+    if params.get('missed_hoop', False):
+        total_reward += HOOP_MISS_PENALTY
+        
+    if params.get('collision', False):
+        total_reward += COLLISION_PENALTY
+    
+    # Time-based penalty (encourage efficiency)
+    episode_time = params.get('episode_time', 0.0)
+    if episode_time > 180.0:  # More than 3 minutes
+        total_reward += SLOW_PROGRESS_PENALTY
+    
+    # === SAFETY OVERRIDES (System-managed, not student-configurable) ===
+    if params.get('out_of_bounds', False):
+        total_reward += BOUNDARY_VIOLATION
+        
+    if params.get('emergency_stop', False):
+        total_reward += EMERGENCY_LANDING
+    
+    return float(total_reward)
+
+# Example parameter explanation for students
+REWARD_PARAMETER_GUIDE = {
+    'HOOP_PASSAGE_REWARD': 'Increase this to make the drone prioritize getting through hoops over other behaviors',
+    'VISUAL_ALIGNMENT_REWARD': 'Increase this to make the drone better at centering hoops in camera view',
+    'PRECISION_BONUS': 'Increase this to reward more precise flight through smaller hoops',
+    'SPEED_EFFICIENCY_BONUS': 'Adjust this to balance speed vs accuracy - higher values encourage faster flight',
+    'HOOP_MISS_PENALTY': 'Increase magnitude to strongly discourage missing hoops',
+    'SMOOTH_FLIGHT_BONUS': 'Increase this to encourage smoother, more stable flight patterns'
+}
+```
+
+## Updated Action Space for Hoop Navigation
+
+The action space is enhanced to support more sophisticated 3D navigation required for hoop flying:
+
+```python
+class HoopNavigationActionProcessor:
+    """
+    Enhanced action processor for hoop navigation with 3D movement capability
+    """
+    
+    def __init__(self, config):
+        # Action space: 3D movement control
+        self.action_space = gym.spaces.Box(
+            low=np.array([-1.0, -1.0, -1.0]), 
+            high=np.array([1.0, 1.0, 1.0]), 
+            dtype=np.float32
+        )
+        
+        # Control parameters
+        self.max_horizontal_speed = 0.8    # m/s
+        self.max_vertical_speed = 0.4      # m/s
+        self.base_forward_speed = 0.6      # m/s
+        
+    def process_action(self, action, current_state, target_hoop):
+        """
+        Convert 3D RL action to drone velocity commands for hoop navigation
+        
+        Args:
+            action[0]: Lateral movement (-1=left, +1=right)
+            action[1]: Vertical movement (-1=down, +1=up)  
+            action[2]: Speed adjustment (-1=slow, +1=fast)
+            
+        Returns:
+            velocity_command: [vx, vy, vz] in drone body frame
+        """
+        # Extract action components
+        lateral_command = np.clip(action[0], -1.0, 1.0)
+        vertical_command = np.clip(action[1], -1.0, 1.0)  
+        speed_command = np.clip(action[2], -1.0, 1.0)
+        
+        # Calculate velocity components
+        lateral_velocity = lateral_command * self.max_horizontal_speed
+        vertical_velocity = vertical_command * self.max_vertical_speed
+        forward_velocity = self.base_forward_speed * (1.0 + 0.5 * speed_command)
+        
+        # Apply dynamic speed limits based on proximity to hoop
+        target_distance = np.linalg.norm(
+            np.array(current_state['position']) - np.array(target_hoop['position']))
+        
+        if target_distance < 1.0:  # Close to hoop - reduce max speeds for precision
+            lateral_velocity *= 0.7
+            forward_velocity *= 0.8
+        
+        velocity_command = [forward_velocity, lateral_velocity, vertical_velocity]
+        
+        return velocity_command
+```
+
+This comprehensive update transforms DeepFlyer into a sophisticated hoop navigation platform that leverages the ZED Mini camera for visual learning while maintaining the educational focus on RL concepts. The system now provides:
+
+1. **Visual Learning**: Students see how computer vision integrates with RL
+2. **Progressive Difficulty**: Multi-lap course with increasing precision requirements  
+3. **Rich Reward Signals**: Multiple reward components students can tune
+4. **Real-world Relevance**: Closer to actual drone racing and navigation tasks
+5. **Safety Maintenance**: All safety systems remain in place
+
+The teammate's requirements for reward/punishment systems, input analysis, and camera integration are fully addressed with this updated design.
 
 ## Conclusion
 

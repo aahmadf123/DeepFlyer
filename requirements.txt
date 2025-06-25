@@ -1,7 +1,12 @@
 numpy>=1.20.0
-torch>=1.10.0
+torch>=2.0.0
+torchvision>=0.15.0
 gymnasium>=0.26.0
 matplotlib>=3.5.0
+opencv-python>=4.8.0
+
+# YOLO11 for Advanced Object Detection
+ultralytics>=8.3.0
 rclpy>=1.0.0
 tf_transformations>=1.0.0
 mavros_msgs>=1.0.0
