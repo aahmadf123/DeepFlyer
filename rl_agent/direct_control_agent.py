@@ -21,10 +21,10 @@ from rl_agent.direct_control_network import DirectControlNetwork
 
 class DirectControlAgent(BaseModel):
     """
-    Direct RL Control Agent using P3O algorithm.
+    Direct RL Control Agent using P3O algorithm for hoop navigation.
     
-    This agent observes the current state and directly outputs control commands
-    (thrust, roll, pitch, yaw) using the P3O algorithm, which combines
+    This agent observes the current state and directly outputs velocity commands
+    (lateral, vertical, speed) using the P3O algorithm, which combines
     the advantages of on-policy and off-policy methods.
     """
     
@@ -164,7 +164,7 @@ class DirectControlAgent(BaseModel):
             deterministic: Whether to return deterministic actions
             
         Returns:
-            action: The predicted control action [thrust, roll, pitch, yaw]
+            action: The predicted control action [lateral_cmd, vertical_cmd, speed_cmd]
             states: None (no additional state information)
         """
         # Handle dict observations

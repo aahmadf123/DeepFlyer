@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Test script for the direct RL control approach.
+Test script for DeepFlyer hoop navigation using P3O.
 
-This script runs a test of the direct RL control approach using P3O
-for drone path following.
+This script runs a test of the DeepFlyer educational platform using P3O
+for drone hoop navigation with PX4-ROS-COM integration.
 """
 
 import rclpy
@@ -16,7 +16,7 @@ import logging
 import json
 from datetime import datetime
 
-from rl_agent.direct_control_node import DirectControlNode
+from rl_agent.px4_training_node import DeepFlyerTrainingNode
 
 # Configure logging
 logging.basicConfig(
