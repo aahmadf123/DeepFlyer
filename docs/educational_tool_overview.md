@@ -81,7 +81,7 @@ These options simplify tuning for beginners by limiting the range to sensible de
 * **Entropy Coefficient Slider:** From 0 to 0.1, adjusting exploration vs. exploitation.
 * **Value Loss Coefficient Slider:** From 0.5 to 1.0, weighting the value-function loss term.
 * **Batch Size Selector:** Any power-of-two between 16 and 512.
-* **PPO Clip (ε) Slider:** From 0.1 to 0.3, controlling trust-region size.
+* **P3O Clip (ε) Slider:** From 0.1 to 0.3, controlling trust-region size.
 * **Max Gradient Norm Slider:** From 0.1 to 1.0, setting gradient clipping thresholds.
 * **Epochs per Update Choices:** 3, 5, 7, or 10 pass-throughs over each batch.
 * **Replay Buffer Size Options:** If using off-policy methods, choose among 10 k, 25 k, 50 k, or 100 k samples.
@@ -181,7 +181,7 @@ Each world provides the agent with progressively harder tasks, focusing on navig
   • Entropy Coefficient slider (0–0.1)
   • Value Loss Coefficient slider (0.5–1.0)
   • Batch Size selector (16–512)
-  • PPO Clip (ε) slider (0.1–0.3)
+  • P3O Clip (ε) slider (0.1–0.3)
   • Max Gradient Norm slider (0.1–1.0)
   • Epochs/Update choices {3, 5, 7, 10}
   • Replay Buffer size options {10 k, 25 k, 50 k, 100 k}
@@ -201,7 +201,7 @@ Each world provides the agent with progressively harder tasks, focusing on navig
 
    * Add motor and velocity command support, verify hover and basic navigation.
    * Connect the frontend “Start Training” button to backend endpoints.
-   * Implement a baseline PPO training loop using distance-to-goal rewards.
+   * Implement a baseline P3O training loop using distance-to-goal rewards.
    * Log training metrics to a file or database.
 
 3. **Weeks 5–6 (Sensor & Reward Extensions)**

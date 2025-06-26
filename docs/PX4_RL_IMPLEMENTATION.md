@@ -390,7 +390,7 @@ The RL Agent is like the "brain" of your drone. It's a neural network (artificia
 
 **Key Components Explained:**
 - **PolicyNetwork**: The actual neural network (brain) that makes decisions
-- **PPO**: The learning algorithm (like a study method for the brain)
+- **P3O**: The learning algorithm (like a study method for the brain)
 - **ReplayBuffer**: Memory storage for experiences to learn from later
 - **RewardCalculator**: The "teacher" that tells the agent if it did well or poorly
 
@@ -401,7 +401,7 @@ class DeepFlyerRLAgent:
     
     Responsibilities:
     - Neural network policy
-    - Training algorithm (PPO, SAC, etc.)
+    - Training algorithm (P3O)
     - Experience replay/collection
     - Reward computation
     - Action generation
@@ -416,7 +416,7 @@ class DeepFlyerRLAgent:
         )
         
         # Training algorithm
-        self.algorithm = PPO(
+        self.algorithm = P3O(
             policy=self.policy_net,
             learning_rate=config.lr,
             clip_ratio=config.clip_ratio,
@@ -1216,7 +1216,7 @@ This section walks you through setting up DeepFlyer from scratch, assuming you'r
    - Should have companion computer mount
 
 2. **Companion Computer**: 
-   - Raspberry Pi 4 (minimum) or NVIDIA Jetson Nano/Xavier
+   - Raspberry Pi 4B (minimum 4GB RAM)
    - This runs ROS2 and your RL agent
    - Connects to flight controller via serial/USB
 
@@ -1398,7 +1398,7 @@ Once you have basic functionality working:
 
 1. **Experiment with Reward Functions**: Try different reward parameters to see how they affect behavior
 2. **Add Complexity**: Introduce obstacles, varying wind conditions, or multiple waypoints  
-3. **Compare Algorithms**: Test PPO vs SAC vs other RL algorithms
+3. **Optimize P3O**: Fine-tune P3O hyperparameters for best performance
 4. **Optimize Performance**: Tune hyperparameters for faster learning
 5. **Scale Up**: Try more complex 3D obstacle courses
 

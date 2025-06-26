@@ -53,7 +53,7 @@ DeepFlyer follows a modular architecture built around ROS (Robot Operating Syste
   ┌───────────────────┐  ┌─────────────────┐  ┌──────────────┐
   │    RL Agents      │  │  Environments   │  │  Simulation/  │
   │                   │  │                 │  │  Hardware     │
-  │ - DQN, PPO, etc.  │  │ - RosEnv       │  │               │
+  │ - P3O algorithm    │  │ - RosEnv       │  │               │
   │ - Custom agents   │  │ - MAVROSEnv    │  │ - Gazebo      │
   │                   │  │ - Explorer     │  │ - Real Drone   │
   └────────┬──────────┘  │ - Researcher   │  │ - Mock System │

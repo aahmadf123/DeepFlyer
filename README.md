@@ -16,7 +16,7 @@ DeepFlyer implements direct reinforcement learning control for drones using the 
 
 ## P3O Algorithm
 
-The project implements the P3O algorithm, which combines the advantages of on-policy (PPO) and off-policy (SAC) learning methods. Key features of P3O include:
+The project implements the P3O algorithm, an advanced reinforcement learning method specifically designed for drone navigation tasks. Key features of P3O include:
 
 - **Procrastinated Updates**: Postpones on-policy updates to improve sample efficiency
 - **Blended Learning**: Combines on-policy and off-policy gradients for better stability
