@@ -1,184 +1,179 @@
-# DeepFlyer Project Overview - Complete Technical Breakdown
+# DeepFlyer Technical Reference
 
-## Project Vision
-We're building an educational drone RL platform similar to AWS DeepRacer but for 3D aerial navigation. Students will train drones to fly through hoop courses using reinforcement learning without writing any code - just tuning reward parameters and watching the AI learn.
+**Project**: Educational drone RL platform - students tune rewards, watch AI learn hoop navigation  
+**Algorithm**: P3O (Procrastinated Policy Optimization)  
 
-## Hardware Stack
-- **Drone Frame**: Holybro S500 quadcopter
-- **Flight Controller**: Pixhawk 6C running PX4 firmware
-- **Compute**: Raspberry Pi 4B (4GB RAM minimum) 
-- **Vision**: ZED Mini stereo camera for depth perception and hoop detection
-- **Safety**: Hardware emergency stop, propeller guards, motion capture system for positioning
+## ROS2 Topics Reference
 
-## ROS2 Communication Architecture
+### Flight Control
+| Topic | Type | Direction | Fields | Purpose |
+|-------|------|-----------|--------|---------|
+| `/mavros/setpoint_velocity/cmd_vel` | `geometry_msgs/TwistStamped` | PUBLISH | `linear.x/y/z`, `angular.x/y/z` | Velocity commands to flight controller |
+| `/mavros/local_position/pose` | `geometry_msgs/PoseStamped` | SUBSCRIBE | `position.x/y/z`, `orientation.x/y/z/w` | Current position/orientation |
+| `/mavros/local_position/velocity_local` | `geometry_msgs/TwistStamped` | SUBSCRIBE | `linear.x/y/z`, `angular.x/y/z` | Current velocity feedback |
+| `/mavros/state` | `mavros_msgs/State` | SUBSCRIBE | `connected`, `armed`, `guided`, `mode` | Flight controller status |
 
-### Core Flight Topics
-**Publisher: `/mavros/setpoint_velocity/cmd_vel`**
-- Message Type: `geometry_msgs/TwistStamped`
-- Fields: `linear.x/y/z` (velocity m/s), `angular.x/y/z` (rad/s)
-- Purpose: Send velocity commands from RL agent to flight controller
+### Vision System  
+| Topic | Type | Direction | Fields | Purpose |
+|-------|------|-----------|--------|---------|
+| `/zed_mini/zed_node/rgb/image_rect_color` | `sensor_msgs/Image` | SUBSCRIBE | `height`, `width`, `encoding`, `data[]` | RGB camera feed |
+| `/zed_mini/zed_node/depth/depth_registered` | `sensor_msgs/Image` | SUBSCRIBE | `height`, `width`, `data[]` | Depth data (mm) |
+| `/deepflyer/vision_features` | Custom `VisionFeatures.msg` | PUBLISH | See below | Processed vision data |
 
-**Subscriber: `/mavros/local_position/pose`**
-- Message Type: `geometry_msgs/PoseStamped` 
-- Fields: `position.x/y/z`, `orientation.x/y/z/w` (quaternion)
-- Purpose: Get current drone position and orientation
+**VisionFeatures.msg Fields:**
+- `hoop_detected` (bool)
+- `hoop_center_u`, `hoop_center_v` (int32) - pixel coordinates
+- `hoop_distance` (float32) - meters
+- `hoop_alignment` (float32) - (-1 to 1, 0=centered)  
+- `hoop_diameter_pixels` (float32)
+- `next_hoop_visible` (bool)
+- `hoop_area_ratio` (float32)
 
-**Subscriber: `/mavros/local_position/velocity_local`**
-- Message Type: `geometry_msgs/TwistStamped`
-- Fields: `linear.x/y/z`, `angular.x/y/z`
-- Purpose: Current velocity feedback for RL state
+### RL Training System
+| Topic | Type | Direction | Fields | Purpose |
+|-------|------|-----------|--------|---------|
+| `/deepflyer/rl_action` | Custom `RLAction.msg` | PUBLISH | `lateral_cmd`, `vertical_cmd`, `speed_cmd` | RL actions (-1 to 1) |
+| `/deepflyer/reward_feedback` | Custom `RewardFeedback.msg` | PUBLISH | See below | Reward breakdown |
+| `/deepflyer/course_state` | Custom `CourseState.msg` | SUBSCRIBE | See below | Course progress |
 
-### Vision System Topics
-**Subscriber: `/zed_mini/zed_node/rgb/image_rect_color`**
-- Message Type: `sensor_msgs/Image`
-- Fields: `height`, `width`, `encoding`, `data[]`
-- Purpose: RGB camera feed for hoop detection
+**RLAction.msg Fields:**
+- `lateral_cmd` (float32) - left/right (-1 to 1)
+- `vertical_cmd` (float32) - up/down (-1 to 1)
+- `speed_cmd` (float32) - slow/fast (-1 to 1)
 
-**Subscriber: `/zed_mini/zed_node/depth/depth_registered`**
-- Message Type: `sensor_msgs/Image` 
-- Fields: `height`, `width`, `encoding`, `data[]` (depth values in mm)
-- Purpose: Depth information for distance measurement
+**RewardFeedback.msg Fields:**
+- `total_reward` (float32)
+- `hoop_progress_reward` (float32)
+- `alignment_reward` (float32) 
+- `collision_penalty` (float32)
+- `episode_time` (float32)
+- `lap_completed` (bool)
 
-**Publisher: `/deepflyer/vision_features`**
-- Message Type: Custom `VisionFeatures.msg`
-- Fields: `hoop_detected` (bool), `hoop_center_u/v` (pixel coords), `hoop_distance` (meters), `hoop_alignment` (-1 to 1), `hoop_diameter_pixels`, `next_hoop_visible` (bool)
-- Purpose: Processed vision data for RL agent
+**CourseState.msg Fields:**
+- `current_target_hoop_id` (int32)
+- `lap_number` (int32)
+- `hoops_completed` (int32)
+- `course_progress` (float32) - 0 to 1
 
-### RL Training Topics  
-**Publisher: `/deepflyer/rl_action`**
-- Message Type: Custom `RLAction.msg`
-- Fields: `lateral_cmd`, `vertical_cmd`, `speed_cmd` (all -1 to 1)
-- Purpose: RL agent actions to flight controller
+## Vision Processing
 
-**Publisher: `/deepflyer/reward_feedback`**
-- Message Type: Custom `RewardFeedback.msg` 
-- Fields: `total_reward`, `hoop_progress_reward`, `alignment_reward`, `collision_penalty`, `episode_time`, `lap_completed`
-- Purpose: Reward components for training analysis
+### ZED Mini Camera Settings
+- **Resolution**: 1280x720 (HD720)
+- **FPS**: 60Hz
+- **Depth Mode**: PERFORMANCE 
+- **Coordinate System**: RIGHT_HANDED_Z_UP
 
-**Subscriber: `/deepflyer/course_state`**
-- Message Type: Custom `CourseState.msg`
-- Fields: `current_target_hoop_id`, `lap_number`, `hoops_completed`, `course_progress` (0-1)
-- Purpose: Track progress through hoop course
+### Hoop Detection Parameters
+- **HSV Color Range**: Hue 5-25, Saturation 100-255, Value 100-255
+- **Contour Area**: Min 500px, Max 50,000px
+- **Circularity Threshold**: >0.3
+- **Distance Measurement**: ZED stereo depth (mm → meters)
+- **Detection Priority**: Largest contour = current target
 
-## Vision Processing Pipeline
+### Vision Output Values
+- **Hoop Alignment**: -1.0 (left) → 0.0 (center) → +1.0 (right)
+- **Distance Range**: 0.5m to 5.0m effective range
+- **Pixel Coordinates**: u,v in image frame (0-1280, 0-720)
+- **Area Ratio**: hoop_pixels / total_image_pixels
 
-### Hoop Detection Strategy
-- Use ZED Mini stereo vision for real-time hoop detection
-- HSV color filtering for orange hoop identification (range: 5-25 hue, 100-255 saturation)
-- Contour analysis with circularity filtering (minimum 0.3 circularity threshold)
-- Distance measurement using stereo depth data
-- Track multiple hoops simultaneously, prioritize by size/proximity
+## P3O RL System
 
-### Vision Features for RL
-- **Hoop Alignment**: -1 (far left) to +1 (far right), 0 = centered in camera view
-- **Hoop Distance**: Meters from drone to target hoop center  
-- **Hoop Visibility**: Boolean flag if target hoop is detected
-- **Hoop Size Ratio**: Detected hoop area / total image area
-- **Next Hoop Preview**: Whether next hoop in sequence is visible
+### State Space (12D Vector)
+| Index | Component | Range | Description |
+|-------|-----------|-------|-------------|
+| 0-2 | Direction to hoop | -1 to 1 | Normalized x,y,z direction vector |
+| 3-4 | Current velocity | -1 to 1 | Forward, lateral velocity |
+| 5-6 | Navigation metrics | 0 to 1 | Distance to target, velocity alignment |
+| 7-9 | Vision features | -1 to 1 | Hoop alignment, visual distance, visibility |
+| 10-11 | Course progress | 0 to 1 | Lap progress, overall completion |
 
-## RL System Design
+### Action Space (3D Continuous)
+| Action | Range | Control | Max Speed |
+|--------|-------|---------|-----------|
+| `lateral_cmd` | -1 to 1 | Left/Right | 0.8 m/s |
+| `vertical_cmd` | -1 to 1 | Up/Down | 0.4 m/s |
+| `speed_cmd` | -1 to 1 | Slow/Fast | 0.6 m/s base |
 
-### Algorithm: P3O (Procrastinated Policy Optimization)
-- Advanced RL algorithm designed specifically for drone navigation
-- Combines exploration efficiency with stable learning
-- Handles continuous 3D action spaces well
-- Updates policy with delayed optimization for better sample efficiency
+### P3O Hyperparameters
+- **Learning Rate**: 3e-4 (range: 1e-5 to 1e-2)
+- **Clip Epsilon**: 0.2 (range: 0.1 to 0.3)
+- **Batch Size**: 64 (options: 32, 64, 128, 256)
+- **Discount Factor**: 0.99 (range: 0.90 to 0.999)
+- **Entropy Coefficient**: 0.01 (range: 0.0 to 0.1)
 
-### State Space (12-dimensional observation vector)
-1. **Direction to target hoop** (3D normalized): x, y, z components
-2. **Current velocity** (2D): forward and lateral velocity  
-3. **Navigation metrics** (2D): distance to target, velocity alignment
-4. **Vision features** (3D): hoop alignment, visual distance, visibility flag
-5. **Course progress** (2D): progress within current lap, overall completion
+## Course Layout
 
-### Action Space (3D continuous control)
-- **Lateral Movement** (-1 to +1): left/right adjustment
-- **Vertical Movement** (-1 to +1): up/down adjustment  
-- **Speed Control** (-1 to +1): slow down/speed up
+### Physical Setup
+- **Course Size**: 2.1m × 1.6m flight area
+- **Flight Height**: 0.8m above ground
+- **Hoop Count**: 5 hoops per circuit
+- **Hoop Diameter**: 0.8m
+- **Lap Requirement**: 3 complete circuits
+- **Navigation**: Hoop 1 → 2 → 3 → 4 → 5 → repeat
 
-### Action Translation
-- Actions get converted to velocity commands with safety limits
-- Maximum horizontal speed: 0.8 m/s
-- Maximum vertical speed: 0.4 m/s  
-- Base forward speed: 0.6 m/s (adjusted by speed action)
-- Dynamic speed reduction when close to hoops for precision
+## Reward System
 
-## Course Design & Navigation
+### Positive Rewards (Student Tunable)
+| Event | Default Points | Range | Description |
+|-------|----------------|-------|-------------|
+| Hoop Passage | +50 | 25-100 | Successfully through hoop |
+| Approach Target | +10 | 5-20 | Getting closer to target |
+| Center Bonus | +20 | 10-40 | Precise center passage |
+| Visual Alignment | +5 | 1-10 | Hoop centered in view |
+| Lap Complete | +100 | 50-200 | Full circuit finished |
+| Course Complete | +500 | 200-1000 | All 3 laps done |
 
-### Hoop Course Layout
-- Fixed 5-hoop circuit that drones navigate repeatedly  
-- 3 complete laps required for course completion
-- Hoop diameter: 0.8m (challenging but achievable)
-- Flight altitude: 0.8m above ground level
-- Course fits within 2.1m x 1.6m flight area
-
-### Flight Trajectory Planning
-- Sequential hoop navigation: Hoop 1 → 2 → 3 → 4 → 5 → back to 1
-- Relative positioning system adapts to any lab environment
-- Fixed altitude flight with 3D maneuvering for hoop passage
-- Smooth trajectory optimization through reward shaping
-
-## Reward Function Architecture
-
-### Student-Tunable Parameters
-- **Hoop Passage Reward**: +50 points for successful hoop traversal
-- **Approach Reward**: +10 points for getting closer to target hoop
-- **Center Bonus**: +20 points for passing through hoop center
-- **Visual Alignment**: +5 points for keeping hoop centered in view
-- **Lap Completion**: +100 points for completing full lap
-- **Course Completion**: +500 points for finishing all 3 laps
-
-### Penalty System
-- **Hoop Miss**: -25 points for flying around instead of through hoop
-- **Collision**: -100 points for hitting obstacles
-- **Wrong Direction**: -2 points for flying away from target
-- **Time Penalty**: -1 point for taking too long
-- **Erratic Flight**: -3 points for jerky, unstable movements
+### Penalties (Student Tunable)
+| Event | Default Points | Range | Description |
+|-------|----------------|-------|-------------|
+| Hoop Miss | -25 | -10 to -50 | Flying around hoop |
+| Collision | -100 | -50 to -200 | Hitting obstacles |
+| Wrong Direction | -2 | -1 to -5 | Flying away from target |
+| Time Penalty | -1 | -0.5 to -2 | Taking too long |
+| Erratic Flight | -3 | -1 to -10 | Jerky movements |
 
 ### Safety Overrides (Non-tunable)
-- **Boundary Violation**: -200 points for leaving safe flight area
-- **Emergency Landing**: -500 points for emergency stop activation
+| Event | Points | Trigger |
+|-------|--------|---------|
+| Boundary Violation | -200 | Outside flight area |
+| Emergency Stop | -500 | Hardware stop pressed |
 
-## Training & Learning Parameters
+## Training Configuration
 
-### P3O Hyperparameters  
-- **Learning Rate**: 3e-4 (tunable 1e-5 to 1e-2)
-- **Clip Epsilon**: 0.2 (tunable 0.1 to 0.3)
-- **Batch Size**: 64 (options: 32, 64, 128, 256)
-- **Discount Factor**: 0.99 (tunable 0.90 to 0.999)
-- **Entropy Coefficient**: 0.01 (tunable 0.0 to 0.1)
+### Episode Parameters
+| Parameter | Value | Unit |
+|-----------|-------|------|
+| Max Episodes | 1000 | per training session |
+| Max Steps | 500 | per episode (25 sec) |
+| Evaluation Freq | 50 | episodes |
+| Success Criteria | Course completion | or time limit |
 
-### Training Episodes
-- **Max Episodes**: 1000 per training session
-- **Max Steps per Episode**: 500 steps (25 seconds real-time)
-- **Episode Success**: Complete course or reach time limit
-- **Evaluation Frequency**: Every 50 episodes with 5-episode average
+### Safety Limits
+| Boundary | Dimension | Action |
+|----------|-----------|--------|
+| Flight Area | 2.1m × 1.6m × 1.5m | Auto-land if exceeded |
+| Max Speed | 0.8 m/s horizontal | Velocity clamping |
+| Max Speed | 0.4 m/s vertical | Velocity clamping |
+| Emergency Stop | Hardware button | Immediate motor kill |
 
-## Implementation Timeline
+## Development Phases
 
-### Phase 1: Core Infrastructure (Weeks 1-4)
-- ROS2 workspace setup with MAVROS integration
-- Basic P3O agent skeleton with dummy actions
-- Gazebo simulation environment with Holybro S500 model
-- Simple reward system (distance-based navigation)
+### Phase 1 (Weeks 1-4): Core Infrastructure
+- ROS2 + MAVROS setup
+- P3O agent skeleton  
+- Gazebo simulation
+- Basic rewards
 
-### Phase 2: Vision Integration (Weeks 5-8)  
-- ZED Mini camera integration and calibration
-- Hoop detection pipeline with OpenCV
-- Vision-based state representation for RL
-- Enhanced reward functions with visual feedback
+### Phase 2 (Weeks 5-8): Vision Integration
+- ZED Mini integration
+- Hoop detection pipeline
+- Vision-based RL state
+- Enhanced rewards
 
-### Phase 3: Advanced Features (Weeks 9-12)
-- Multi-lap course completion system
-- Student-facing parameter tuning interface
-- Training visualization and progress tracking
-- Sim-to-real transfer preparation
+### Phase 3 (Weeks 9-12): Advanced Features  
+- Multi-lap system
+- Student interface
+- Training visualization
+- Sim-to-real prep
 
-## Safety & Testing Protocol
-- All flights within netted 2.5m x 2.0m x 1.5m lab space
-- Hardware emergency stop accessible at all times
-- Graduated testing: simulation → tethered → free flight
-- Automated boundary checking and emergency landing
-- Propeller guards mandatory for all real-world testing
-
-This is our complete technical roadmap. The key innovation is making RL accessible to students without coding - they just tune reward parameters and watch the drone learn to navigate. The P3O algorithm handles the complex 3D flight dynamics while the ZED Mini provides the visual intelligence for hoop detection. 
+**Key Innovation**: Students tune reward parameters, watch AI learn - no coding required 
