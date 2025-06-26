@@ -414,7 +414,7 @@ graph TD
     class RGB,DEPTH,POS,STATUS,VF,RLA,RF,CS topics
     class CMD,MODE control
     class UI interface
-```
+```mermaid
 
 **Key Architecture Benefits:**
 - **Modularity**: Each component can be developed and tested independently
