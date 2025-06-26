@@ -2,6 +2,11 @@
 
 **Project**: Educational drone RL platform - students tune rewards, watch AI learn hoop navigation  
 **Algorithm**: P3O (Procrastinated Policy Optimization)  
+**Hardware**: Holybro S500 + Pixhawk 6C + Pi 4B + ZED Mini + Emergency stop
+
+## Overview
+
+I'm handling the entire RL/AI/Vision pipeline - from raw camera input to trained flight policies. This includes computer vision processing, state representation, reward engineering, P3O training, and all the intelligent decision-making that makes the drone learn to navigate autonomously.
 
 ## ROS2 Topics Reference
 
@@ -55,30 +60,67 @@
 - `hoops_completed` (int32)
 - `course_progress` (float32) - 0 to 1
 
-## Vision Processing
+## Vision Processing Pipeline (My Implementation)
 
-### ZED Mini Camera Settings
-- **Resolution**: 1280x720 (HD720)
-- **FPS**: 60Hz
-- **Depth Mode**: PERFORMANCE 
-- **Coordinate System**: RIGHT_HANDED_Z_UP
+### YOLO11 Computer Vision System
+I'm implementing a robust vision system using YOLO11 for real-time hoop detection. The ZED Mini provides both RGB and depth data, which I process through YOLO11 for reliable object detection in varying conditions.
 
-### Hoop Detection Parameters
-- **HSV Color Range**: Hue 5-25, Saturation 100-255, Value 100-255
-- **Contour Area**: Min 500px, Max 50,000px
-- **Circularity Threshold**: >0.3
-- **Distance Measurement**: ZED stereo depth (mm → meters)
-- **Detection Priority**: Largest contour = current target
+**YOLO11 Detection Pipeline:**
+- Using YOLO11 for robust hoop detection regardless of lighting/angle conditions
+- Custom trained model on hoop dataset with data augmentation
+- Handles partial occlusions, varying orientations, and lighting changes
+- Outputs bounding boxes with confidence scores for each detected hoop
+- Real-time inference on Pi 4B using optimized ONNX model
+- Direct integration with ZED Mini depth data for 3D positioning
 
-### Vision Output Values
-- **Hoop Alignment**: -1.0 (left) → 0.0 (center) → +1.0 (right)
-- **Distance Range**: 0.5m to 5.0m effective range
-- **Pixel Coordinates**: u,v in image frame (0-1280, 0-720)
-- **Area Ratio**: hoop_pixels / total_image_pixels
+### ZED Mini Integration Strategy
+The ZED Mini gives me stereo vision capabilities that I leverage for precise 3D positioning:
 
-## P3O RL System
+**Camera Configuration:**
+- **Resolution**: 1280x720 @ 60Hz for smooth real-time processing
+- **Depth Mode**: PERFORMANCE (balance of speed vs accuracy)
+- **Coordinate System**: RIGHT_HANDED_Z_UP for ROS compatibility
 
-### State Space (12D Vector)
+**Depth Processing:**
+- Extract accurate distance measurements from stereo depth map
+- Filter depth noise using temporal smoothing and statistical outlier removal
+- Convert depth values from millimeters to meters for RL state representation
+- Cross-reference YOLO bounding boxes with depth data for 3D hoop positions
+
+### Vision Feature Extraction for RL
+I'm processing the raw visual data into meaningful features that the RL agent can use:
+
+**Spatial Features:**
+- **Hoop Alignment**: -1.0 (far left) → 0.0 (centered) → +1.0 (far right)
+- **Distance**: Stereo depth measurement (0.5m to 5.0m effective range)
+- **Pixel Coordinates**: Center point in image frame (0-1280, 0-720)
+- **Size Indicator**: Hoop area ratio relative to total image area
+
+**Navigation Features:**
+- **Target Identification**: Which hoop is the current navigation target
+- **Next Hoop Preview**: Whether the next hoop in sequence is visible
+- **Multi-Hoop Tracking**: Simultaneous detection of multiple hoops with priority sorting
+
+### Vision Processing Node Architecture
+I'm creating a dedicated ROS2 node that handles all vision processing:
+
+```
+vision_processor_node.py:
+├── ZED Mini data subscription (/zed_mini/zed_node/rgb + /depth)
+├── YOLO11 inference pipeline
+├── Depth integration and 3D positioning
+├── Feature extraction for RL
+└── Publishing to /deepflyer/vision_features
+```
+
+The node will run at 30Hz to balance processing load with real-time requirements. I'm implementing frame dropping and async processing to maintain consistent performance on the Pi 4B.
+
+## P3O RL System (My Implementation)
+
+### State Representation Strategy
+I'm designing a compact 12-dimensional state vector that captures all the essential information the drone needs for navigation decisions. The key is balancing information richness with processing efficiency.
+
+**State Vector Breakdown:**
 | Index | Component | Range | Description |
 |-------|-----------|-------|-------------|
 | 0-2 | Direction to hoop | -1 to 1 | Normalized x,y,z direction vector |
@@ -87,19 +129,42 @@
 | 7-9 | Vision features | -1 to 1 | Hoop alignment, visual distance, visibility |
 | 10-11 | Course progress | 0 to 1 | Lap progress, overall completion |
 
-### Action Space (3D Continuous)
+**State Processing Logic:**
+- I normalize all values to prevent any single feature from dominating the learning
+- Velocity alignment measures how well the drone's current movement aligns with the optimal direction to the target
+- Course progress helps the agent understand long-term objectives beyond just the immediate hoop
+- Vision features are preprocessed to be robust against lighting changes and partial occlusions
+
+### Action Space Design
+I'm using a continuous 3D action space that gives the drone fine-grained control while remaining intuitive:
+
 | Action | Range | Control | Max Speed |
 |--------|-------|---------|-----------|
 | `lateral_cmd` | -1 to 1 | Left/Right | 0.8 m/s |
 | `vertical_cmd` | -1 to 1 | Up/Down | 0.4 m/s |
 | `speed_cmd` | -1 to 1 | Slow/Fast | 0.6 m/s base |
 
-### P3O Hyperparameters
-- **Learning Rate**: 3e-4 (range: 1e-5 to 1e-2)
-- **Clip Epsilon**: 0.2 (range: 0.1 to 0.3)
-- **Batch Size**: 64 (options: 32, 64, 128, 256)
-- **Discount Factor**: 0.99 (range: 0.90 to 0.999)
-- **Entropy Coefficient**: 0.01 (range: 0.0 to 0.1)
+**Action Translation Logic:**
+- Actions are smoothed to prevent jerky movements that could destabilize the drone
+- Speed reduction near hoops for precision - when within 1m of target, max speeds are reduced by 30%
+- Emergency bounds checking ensures actions never exceed safety limits
+- Actions get converted to MAVROS velocity commands with built-in safety margins
+
+### P3O Algorithm Implementation
+I'm implementing P3O with specific adaptations for drone navigation challenges:
+
+**Core Hyperparameters:**
+- **Learning Rate**: 3e-4 (adaptive scheduling based on training progress)
+- **Clip Epsilon**: 0.2 (prevents destructive policy updates)
+- **Batch Size**: 64 (balanced for Pi 4B memory constraints)
+- **Discount Factor**: 0.99 (values long-term course completion)
+- **Entropy Coefficient**: 0.01 (encourages exploration of new flight paths)
+
+**Training Architecture:**
+- Experience collection runs at 20Hz during flight episodes
+- Policy updates happen every 64 steps to maintain sample efficiency
+- Value function and policy networks are separate to prevent interference
+- Gradient clipping at 0.5 to prevent training instability from outlier episodes
 
 ## Course Layout
 
@@ -111,9 +176,12 @@
 - **Lap Requirement**: 3 complete circuits
 - **Navigation**: Hoop 1 → 2 → 3 → 4 → 5 → repeat
 
-## Reward System
+## Reward Engineering (My Implementation)
 
-### Positive Rewards (Student Tunable)
+### Reward Function Architecture
+I'm designing a modular reward system that students can tune without breaking the core safety mechanisms. The challenge is making the rewards educational while ensuring safe flight behavior.
+
+**Positive Rewards (Student Tunable):**
 | Event | Default Points | Range | Description |
 |-------|----------------|-------|-------------|
 | Hoop Passage | +50 | 25-100 | Successfully through hoop |
@@ -123,7 +191,7 @@
 | Lap Complete | +100 | 50-200 | Full circuit finished |
 | Course Complete | +500 | 200-1000 | All 3 laps done |
 
-### Penalties (Student Tunable)
+**Penalties (Student Tunable):**
 | Event | Default Points | Range | Description |
 |-------|----------------|-------|-------------|
 | Hoop Miss | -25 | -10 to -50 | Flying around hoop |
@@ -132,11 +200,19 @@
 | Time Penalty | -1 | -0.5 to -2 | Taking too long |
 | Erratic Flight | -3 | -1 to -10 | Jerky movements |
 
-### Safety Overrides (Non-tunable)
+**Safety Overrides (Non-tunable):**
 | Event | Points | Trigger |
 |-------|--------|---------|
 | Boundary Violation | -200 | Outside flight area |
 | Emergency Stop | -500 | Hardware stop pressed |
+
+### Reward Calculation Logic
+I'm implementing shaped rewards that provide continuous feedback rather than just sparse completion rewards:
+
+- **Distance-based shaping**: Rewards get stronger as the drone approaches the target hoop
+- **Temporal discounting**: Recent progress is weighted more heavily than distant progress
+- **Multi-objective balancing**: Separate reward components are normalized to prevent any single component from dominating
+- **Safety priority**: Safety penalties always override positive rewards to prevent dangerous learned behaviors
 
 ## Training Configuration
 
@@ -156,24 +232,43 @@
 | Max Speed | 0.4 m/s vertical | Velocity clamping |
 | Emergency Stop | Hardware button | Immediate motor kill |
 
-## Development Phases
+## Integration Strategy & Data Flow
 
-### Phase 1 (Weeks 1-4): Core Infrastructure
-- ROS2 + MAVROS setup
-- P3O agent skeleton  
-- Gazebo simulation
-- Basic rewards
+### My Node Architecture
+I'm creating several specialized ROS2 nodes that work together:
 
-### Phase 2 (Weeks 5-8): Vision Integration
-- ZED Mini integration
-- Hoop detection pipeline
-- Vision-based RL state
-- Enhanced rewards
+**1. Vision Processor Node** (`vision_processor.py`)
+- Subscribes to ZED Mini RGB and depth streams
+- Runs YOLO11 hoop detection
+- Publishes processed vision features for RL agent
+- Handles calibration and camera parameter management
 
-### Phase 3 (Weeks 9-12): Advanced Features  
-- Multi-lap system
-- Student interface
-- Training visualization
-- Sim-to-real prep
+**2. RL Agent Node** (`p3o_agent.py`)  
+- Subscribes to vision features, drone state, and course progress
+- Processes 12D state vector for neural network input
+- Outputs 3D action commands for flight control
+- Manages training episodes and policy updates
+- Publishes reward feedback for analysis
+
+**3. Reward Calculator Node** (`reward_calculator.py`)
+- Subscribes to all relevant state information
+- Computes multi-component reward signals
+- Handles student parameter updates dynamically
+- Publishes detailed reward breakdowns for UI
+
+**4. Course Manager Node** (`course_manager.py`)
+- Tracks which hoop is the current target
+- Manages lap counting and course completion
+- Handles course reset and episode management
+- Publishes course state for RL agent
+
+### Data Flow Architecture
+```
+ZED Mini → Vision Processor → RL Agent → MAVROS → Pixhawk 6C
+    ↓              ↓             ↓
+Course Manager ← Reward Calculator ← Flight State
+```
+
+The beauty of this architecture is modularity - each component can be developed and tested independently, and students can modify reward parameters without affecting core flight safety systems.
 
 **Key Innovation**: Students tune reward parameters, watch AI learn - no coding required 
