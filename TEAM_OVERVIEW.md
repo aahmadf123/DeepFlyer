@@ -10,13 +10,14 @@ I'm handling the entire RL/AI/Vision pipeline - from raw camera input to trained
 
 ## ROS2 Topics Reference
 
-### Flight Control
+### Flight Control (PX4-ROS-COM)
 | Topic | Type | Direction | Fields | Purpose |
 |-------|------|-----------|--------|---------|
-| `/mavros/setpoint_velocity/cmd_vel` | `geometry_msgs/TwistStamped` | PUBLISH | `linear.x/y/z`, `angular.x/y/z` | Velocity commands to flight controller |
-| `/mavros/local_position/pose` | `geometry_msgs/PoseStamped` | SUBSCRIBE | `position.x/y/z`, `orientation.x/y/z/w` | Current position/orientation |
-| `/mavros/local_position/velocity_local` | `geometry_msgs/TwistStamped` | SUBSCRIBE | `linear.x/y/z`, `angular.x/y/z` | Current velocity feedback |
-| `/mavros/state` | `mavros_msgs/State` | SUBSCRIBE | `connected`, `armed`, `guided`, `mode` | Flight controller status |
+| `/fmu/in/vehicle_command` | `px4_msgs/VehicleCommand` | PUBLISH | `command`, `param1-7`, `target_system` | Direct PX4 commands |
+| `/fmu/in/offboard_control_mode` | `px4_msgs/OffboardControlMode` | PUBLISH | `position`, `velocity`, `acceleration` | Control mode selection |
+| `/fmu/in/trajectory_setpoint` | `px4_msgs/TrajectorySetpoint` | PUBLISH | `position[3]`, `velocity[3]` | Position/velocity targets |
+| `/fmu/out/vehicle_local_position` | `px4_msgs/VehicleLocalPosition` | SUBSCRIBE | `x`, `y`, `z`, `vx`, `vy`, `vz` | Current position/velocity |
+| `/fmu/out/vehicle_status` | `px4_msgs/VehicleStatus` | SUBSCRIBE | `arming_state`, `nav_state`, `failsafe` | Flight controller status |
 
 ### Vision System  
 | Topic | Type | Direction | Fields | Purpose |
@@ -148,7 +149,7 @@ I'm using a continuous 3D action space that gives the drone fine-grained control
 - Actions are smoothed to prevent jerky movements that could destabilize the drone
 - Speed reduction near hoops for precision - when within 1m of target, max speeds are reduced by 30%
 - Emergency bounds checking ensures actions never exceed safety limits
-- Actions get converted to MAVROS velocity commands with built-in safety margins
+- Actions get converted to PX4-ROS-COM trajectory setpoints with built-in safety margins
 
 ### P3O Algorithm Implementation
 I'm implementing P3O with specific adaptations for drone navigation challenges:
@@ -206,23 +207,78 @@ I'm designing a modular reward system that students can tune without breaking th
 | Boundary Violation | -200 | Outside flight area |
 | Emergency Stop | -500 | Hardware stop pressed |
 
-### Reward Calculation Logic
-I'm implementing shaped rewards that provide continuous feedback rather than just sparse completion rewards:
+### Reward Calculation Logic (Detailed Implementation)
+I'm implementing a sophisticated shaped reward system that provides continuous, educational feedback while maintaining safety priorities:
 
-- **Distance-based shaping**: Rewards get stronger as the drone approaches the target hoop
-- **Temporal discounting**: Recent progress is weighted more heavily than distant progress
-- **Multi-objective balancing**: Separate reward components are normalized to prevent any single component from dominating
-- **Safety priority**: Safety penalties always override positive rewards to prevent dangerous learned behaviors
+**Core Reward Equation:**
+```
+Total_Reward = Progress_Reward + Alignment_Reward + Speed_Reward - Penalties - Safety_Overrides
+```
 
-## Training Configuration
+**1. Progress Reward (Distance-Based Shaping):**
+- **Calculation**: `progress_reward = student_weight * exp(-distance_to_target / decay_factor)`
+- **Distance decay**: Rewards exponentially increase as drone approaches target hoop
+- **Previous distance tracking**: `delta_reward = (prev_distance - current_distance) * approach_multiplier`
+- **Completion bonus**: Immediate +50 points when hoop center is within 0.3m radius
 
-### Episode Parameters
-| Parameter | Value | Unit |
-|-----------|-------|------|
-| Max Episodes | 1000 | per training session |
-| Max Steps | 500 | per episode (25 sec) |
-| Evaluation Freq | 50 | episodes |
-| Success Criteria | Course completion | or time limit |
+**2. Alignment Reward (Continuous Guidance):**
+- **Visual alignment**: `alignment_reward = student_weight * (1 - abs(hoop_center_offset))`
+- **Hoop center offset**: Normalized pixel distance from image center (-1 to +1)
+- **Approach angle**: Additional reward for approaching hoop perpendicularly rather than at angles
+- **Multi-hoop awareness**: Penalty reduction when multiple hoops visible (prevents confusion)
+
+**3. Speed Management Reward:**
+- **Adaptive speed**: Rewards faster flight in open areas, slower near targets
+- **Speed calculation**: `speed_reward = optimal_speed_ratio * student_weight`
+- **Optimal speed ratio**: `min(current_speed / target_speed, target_speed / current_speed)`
+- **Target speed varies**: 0.6 m/s in open space, 0.2 m/s within 1m of hoop
+
+**4. Multi-Component Normalization:**
+- **Component weighting**: Each reward type normalized to [0, student_max] range
+- **Temporal smoothing**: Running average over last 5 timesteps to prevent noise
+- **Priority ordering**: Safety > Progress > Alignment > Speed
+- **Student tunability**: All positive weights adjustable, ratios maintained
+
+**5. Safety Override Logic:**
+- **Boundary violations**: Immediate -200 points, episode termination trigger
+- **Collision detection**: -100 points, speed reduction to 10% for 2 seconds
+- **Emergency stop**: -500 points, immediate motor shutdown
+- **Non-negotiable**: Safety penalties bypass all student tuning parameters
+
+**6. Reward Shaping Techniques:**
+- **Potential-based shaping**: Ensures optimal policy convergence
+- **Curriculum progression**: Reward weights automatically adjust as success rate improves
+- **Exploration bonuses**: Small rewards for visiting unexplored areas of state space
+- **Dense feedback**: Reward calculated every 50ms for continuous learning signal
+
+## Training Configuration (Student Tunable)
+
+Like AWS DeepRacer, students can adjust training parameters to optimize learning:
+
+### Episode Parameters (Student Adjustable)
+| Parameter | Default | Range | Unit | Educational Purpose |
+|-----------|---------|-------|------|---------------------|
+| Max Episodes | 1000 | 100-5000 | per session | Learn about training duration vs performance |
+| Max Steps per Episode | 500 | 200-1000 | steps (25-50 sec) | Balance exploration vs efficiency |
+| Evaluation Frequency | 50 | 10-200 | episodes | Trade-off between feedback and training time |
+| Early Stopping Patience | 100 | 50-500 | episodes | Understand convergence and overfitting |
+| Success Threshold | 80% | 50-95% | completion rate | Set learning goals and difficulty |
+
+### P3O Hyperparameters (Student Adjustable)
+| Parameter | Default | Range | Educational Focus |
+|-----------|---------|-------|-------------------|
+| Learning Rate | 3e-4 | 1e-5 to 1e-3 | Speed vs stability trade-off |
+| Batch Size | 64 | 16-256 | Memory usage vs sample efficiency |
+| Clip Epsilon | 0.2 | 0.1-0.5 | Conservative vs aggressive updates |
+| Entropy Coefficient | 0.01 | 0.001-0.1 | Exploration vs exploitation |
+| Discount Factor | 0.99 | 0.9-0.999 | Short-term vs long-term thinking |
+
+### Advanced Settings (Instructor Override)
+| Parameter | Value | Justification |
+|-----------|-------|---------------|
+| Safety Boundaries | Fixed | Non-negotiable for hardware protection |
+| Emergency Limits | Fixed | Required for safe operation |
+| Hardware Timeouts | Fixed | Prevent damage from communication failures |
 
 ### Safety Limits
 | Boundary | Dimension | Action |
@@ -263,12 +319,108 @@ I'm creating several specialized ROS2 nodes that work together:
 - Publishes course state for RL agent
 
 ### Data Flow Architecture
-```
-ZED Mini → Vision Processor → RL Agent → MAVROS → Pixhawk 6C
-    ↓              ↓             ↓
-Course Manager ← Reward Calculator ← Flight State
+
+The complete system pipeline showing all components, data flows, and student interaction points:
+
+```mermaid
+graph TD
+    %% Hardware Layer
+    ZED["ZED Mini Camera<br/>RGB + Depth @ 60Hz"]
+    PX4["Pixhawk 6C<br/>Flight Controller"]
+    PI["Raspberry Pi 4B<br/>Compute Unit"]
+    
+    %% Data Sources
+    RGB["/zed_mini/zed_node/rgb/image_rect_color<br/>sensor_msgs/Image"]
+    DEPTH["/zed_mini/zed_node/depth/depth_registered<br/>sensor_msgs/Image"]
+    POS["/fmu/out/vehicle_local_position<br/>px4_msgs/VehicleLocalPosition"]
+    STATUS["/fmu/out/vehicle_status<br/>px4_msgs/VehicleStatus"]
+    
+    %% Processing Nodes
+    VISION["Vision Processor Node<br/>vision_processor.py<br/>📊 YOLO11 + Depth Integration"]
+    RL["RL Agent Node<br/>p3o_agent.py<br/>🧠 P3O Algorithm"]
+    REWARD["Reward Calculator Node<br/>reward_calculator.py<br/>🎯 Multi-Component Rewards"]
+    COURSE["Course Manager Node<br/>course_manager.py<br/>📍 Navigation Logic"]
+    
+    %% Processed Data Topics
+    VF["/deepflyer/vision_features<br/>Custom VisionFeatures.msg<br/>hoop_detected, distance, alignment"]
+    RLA["/deepflyer/rl_action<br/>Custom RLAction.msg<br/>lateral_cmd, vertical_cmd, speed_cmd"]
+    RF["/deepflyer/reward_feedback<br/>Custom RewardFeedback.msg<br/>total_reward, breakdown"]
+    CS["/deepflyer/course_state<br/>Custom CourseState.msg<br/>target_hoop_id, lap_number"]
+    
+    %% Control Outputs
+    CMD["/fmu/in/trajectory_setpoint<br/>px4_msgs/TrajectorySetpoint"]
+    MODE["/fmu/in/offboard_control_mode<br/>px4_msgs/OffboardControlMode"]
+    
+    %% Student Interface
+    UI["Student Web Interface<br/>🎛️ Reward Tuning<br/>📈 Training Monitoring<br/>📊 Performance Analytics"]
+    
+    %% Data Flow
+    ZED --> RGB
+    ZED --> DEPTH
+    PX4 --> POS
+    PX4 --> STATUS
+    
+    RGB --> VISION
+    DEPTH --> VISION
+    VISION --> VF
+    
+    VF --> RL
+    POS --> RL
+    STATUS --> RL
+    CS --> RL
+    RL --> RLA
+    RL --> RF
+    
+    VF --> REWARD
+    POS --> REWARD
+    RLA --> REWARD
+    CS --> REWARD
+    REWARD --> RF
+    
+    POS --> COURSE
+    VF --> COURSE
+    COURSE --> CS
+    
+    RLA --> CMD
+    RLA --> MODE
+    CMD --> PX4
+    MODE --> PX4
+    
+    RF --> UI
+    CS --> UI
+    VF --> UI
+    
+    %% Student Tuning
+    UI -.-> REWARD
+    UI -.-> RL
+    
+    %% Safety Override
+    ESTOP["Emergency Stop<br/>Hardware Button"]
+    ESTOP -.-> PX4
+    ESTOP -.-> RL
+    
+    %% Training Loop
+    RF -.-> RL
+    
+    %% Styling
+    classDef hardware fill:#ffcccb
+    classDef nodes fill:#cce5ff
+    classDef topics fill:#d4edda
+    classDef control fill:#fff3cd
+    classDef interface fill:#e2e3e5
+    
+    class ZED,PX4,PI,ESTOP hardware
+    class VISION,RL,REWARD,COURSE nodes
+    class RGB,DEPTH,POS,STATUS,VF,RLA,RF,CS topics
+    class CMD,MODE control
+    class UI interface
 ```
 
-The beauty of this architecture is modularity - each component can be developed and tested independently, and students can modify reward parameters without affecting core flight safety systems.
+**Key Architecture Benefits:**
+- **Modularity**: Each component can be developed and tested independently
+- **Student Safety**: All tunable parameters isolated from core flight safety systems  
+- **Educational Focus**: Students see immediate impact of reward tuning on AI behavior
+- **Real-time Feedback**: 50ms control loop with continuous reward calculation
+- **Scalability**: Additional nodes can be added without disrupting core pipeline
 
 **Key Innovation**: Students tune reward parameters, watch AI learn - no coding required 
