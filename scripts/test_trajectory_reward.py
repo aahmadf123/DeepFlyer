@@ -33,7 +33,7 @@ from rl_agent.rewards import (
 )
 
 # Import environment
-from rl_agent.env.mavros_env import MAVROSEnv
+from rl_agent.env.px4_base_env import PX4BaseEnv
 
 
 def test_trajectory_rewards():
@@ -81,7 +81,7 @@ def test_trajectory_rewards():
     
     for name, reward_fn in zip(names, reward_fns):
         try:
-            env = MAVROSEnv(
+            env = PX4BaseEnv(
                 goal_position=trajectory[-1],  # End point
                 enable_safety_layer=True,
                 reward_function=reward_fn

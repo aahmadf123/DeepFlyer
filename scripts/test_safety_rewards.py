@@ -28,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger("test_safety_rewards")
 
 # Import our environment and safety/reward classes
-from rl_agent.env.mavros_env import MAVROSEnv, MAVROSExplorerEnv, MAVROSResearcherEnv
+from rl_agent.env.px4_base_env import PX4BaseEnv, PX4ExplorerEnv, PX4ResearcherEnv
 from rl_agent.env.safety_layer import SafetyLayer, BeginnerSafetyLayer, SafetyBounds
 from rl_agent.rewards import RewardFunction, REGISTRY, create_cross_track_and_heading_reward
 
@@ -38,7 +38,7 @@ def test_safety_layer():
     logger.info("Testing safety layer...")
     
     # Create environment with safety layer enabled
-    env = MAVROSEnv(
+    env = PX4BaseEnv(
         enable_safety_layer=True,
         goal_position=[5.0, 5.0, 1.5],
     )
@@ -181,7 +181,7 @@ def test_reward_functions():
     logger.info("Testing reward functions...")
     
     # Create environment with default reward function
-    env = MAVROSEnv(
+    env = PX4BaseEnv(
         goal_position=[5.0, 5.0, 1.5],
         enable_safety_layer=True,
     )
@@ -199,7 +199,7 @@ def test_reward_functions():
         ]
     )
     
-    env2 = MAVROSEnv(
+    env2 = PX4BaseEnv(
         namespace="deepflyer",
         observation_config={
             'position': True,

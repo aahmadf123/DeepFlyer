@@ -1,6 +1,7 @@
 """
-MAVROS Environment Classes for DeepFlyer
-Provides PX4 communication environments with Explorer and Researcher variants
+PX4 Environment Classes for DeepFlyer
+Primary: PX4-ROS-COM communication (recommended)
+Fallback: MAVROS communication (legacy support)
 """
 
 import numpy as np
@@ -17,7 +18,7 @@ except ImportError:
     ROS_AVAILABLE = False
 
 from .ros_env import RosEnv, RosEnvState
-from .mavros_utils import PX4Interface, MAVROSBridge, MessageConverter
+from .px4_comm import PX4Interface, MAVROSBridge, MessageConverter
 from .safety_layer import SafetyLayer, BeginnerSafetyLayer
 from .zed_integration import create_zed_interface, ZEDInterface
 from ..config import DeepFlyerConfig, get_course_layout
@@ -25,19 +26,19 @@ from ..config import DeepFlyerConfig, get_course_layout
 logger = logging.getLogger(__name__)
 
 
-class MAVROSBaseEnv(RosEnv):
-    """Base MAVROS environment with common PX4 functionality"""
+class PX4BaseEnv(RosEnv):
+    """Base PX4 environment with PX4-ROS-COM communication (recommended)"""
     
     def __init__(self, 
-                 use_px4_com: bool = True,
+                 use_px4_com: bool = True,  # Default to PX4-ROS-COM
                  use_zed: bool = False,
                  spawn_position: Tuple[float, float, float] = (0.0, 0.0, 0.8),
                  **kwargs):
         """
-        Initialize MAVROS base environment
+        Initialize PX4 base environment
         
         Args:
-            use_px4_com: Use PX4-ROS-COM instead of traditional MAVROS
+            use_px4_com: Use PX4-ROS-COM (True, recommended) vs MAVROS (False, legacy)
             use_zed: Enable ZED Mini camera integration
             spawn_position: Initial drone spawn position
             **kwargs: Additional arguments for RosEnv
@@ -45,6 +46,10 @@ class MAVROSBaseEnv(RosEnv):
         self.use_px4_com = use_px4_com
         self.use_zed = use_zed
         self.spawn_position = np.array(spawn_position)
+        
+        # Log communication method
+        comm_method = "PX4-ROS-COM (recommended)" if use_px4_com else "MAVROS (legacy)"
+        logger.info(f"Initializing DeepFlyer with {comm_method}")
         
         # Generate course layout
         self.course_hoops = get_course_layout(spawn_position)
@@ -89,13 +94,13 @@ class MAVROSBaseEnv(RosEnv):
         )
     
     def _setup_ros_interface(self) -> None:
-        """Setup ROS interface with PX4 or MAVROS"""
+        """Setup ROS interface with PX4-ROS-COM (primary) or MAVROS (fallback)"""
         if self.use_px4_com:
             self.px4_interface = PX4Interface(self.node)
-            logger.info("Using PX4-ROS-COM interface")
+            logger.info("Using PX4-ROS-COM interface (recommended)")
         else:
             self.mavros_interface = MAVROSBridge(self.node)
-            logger.info("Using MAVROS interface")
+            logger.warning("Using MAVROS interface (legacy - consider switching to PX4-ROS-COM)")
         
         # Start ZED interface if available
         if self.zed_interface is not None:
@@ -260,10 +265,12 @@ class MAVROSBaseEnv(RosEnv):
         super().close()
 
 
-class MAVROSExplorerEnv(MAVROSBaseEnv):
-    """Explorer-level MAVROS environment with beginner-friendly constraints"""
+class PX4ExplorerEnv(PX4BaseEnv):
+    """Explorer-level environment with PX4-ROS-COM and enhanced safety"""
     
     def __init__(self, **kwargs):
+        # Force PX4-ROS-COM for Explorer environment
+        kwargs['use_px4_com'] = True
         super().__init__(**kwargs)
         
         # Use beginner safety layer
@@ -274,31 +281,39 @@ class MAVROSExplorerEnv(MAVROSBaseEnv):
         self.config.ACTION_CONFIG['components']['vertical_cmd']['max_speed'] = 0.3  # Slower
         self.config.ACTION_CONFIG['components']['speed_cmd']['base_speed'] = 0.4   # Slower
         
-        logger.info("MAVROSExplorerEnv initialized with beginner constraints")
+        logger.info("PX4ExplorerEnv initialized with enhanced safety (PX4-ROS-COM)")
 
 
-class MAVROSResearcherEnv(MAVROSBaseEnv):
-    """Researcher-level MAVROS environment with full feature access"""
+class PX4ResearcherEnv(PX4BaseEnv):
+    """Researcher-level environment with PX4-ROS-COM and full control"""
     
     def __init__(self, **kwargs):
+        # Default to PX4-ROS-COM but allow override
+        kwargs.setdefault('use_px4_com', True)
         super().__init__(**kwargs)
         
         # Use full safety layer
         self.safety_layer = SafetyLayer(self.config)
         
-        logger.info("MAVROSResearcherEnv initialized with full capabilities")
+        logger.info("PX4ResearcherEnv initialized with full capabilities (PX4-ROS-COM)")
+
+
+# Legacy compatibility aliases (deprecated - use PX4 versions)
+MAVROSExplorerEnv = PX4ExplorerEnv
+MAVROSResearcherEnv = PX4ResearcherEnv
 
 
 # Convenience functions for creating environments
-def create_explorer_env(**kwargs) -> MAVROSExplorerEnv:
-    """Create Explorer-level environment"""
-    return MAVROSExplorerEnv(**kwargs)
+def create_explorer_env(**kwargs) -> PX4ExplorerEnv:
+    """Create Explorer-level environment with PX4-ROS-COM"""
+    return PX4ExplorerEnv(**kwargs)
 
 
-def create_researcher_env(**kwargs) -> MAVROSResearcherEnv:
-    """Create Researcher-level environment"""
-    return MAVROSResearcherEnv(**kwargs)
+def create_researcher_env(**kwargs) -> PX4ResearcherEnv:
+    """Create Researcher-level environment with PX4-ROS-COM"""
+    return PX4ResearcherEnv(**kwargs)
 
 
-__all__ = ['MAVROSBaseEnv', 'MAVROSExplorerEnv', 'MAVROSResearcherEnv', 
+__all__ = ['PX4BaseEnv', 'PX4ExplorerEnv', 'PX4ResearcherEnv', 
+           'MAVROSExplorerEnv', 'MAVROSResearcherEnv',  # Legacy aliases
            'create_explorer_env', 'create_researcher_env'] 

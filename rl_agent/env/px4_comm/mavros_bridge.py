@@ -1,6 +1,7 @@
 """
 MAVROS Bridge for Traditional PX4 Communication
 Provides MAVROS-based interface as alternative to PX4-ROS-COM
+Backup for PX4-ROS-COM
 """
 
 import numpy as np

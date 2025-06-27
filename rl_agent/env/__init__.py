@@ -6,17 +6,47 @@ from .ros_env import RosEnv, ROS_AVAILABLE
 from ..registry import RewardRegistry
 from ..env.wrappers import CustomRewardWrapper
 
-# Export utilities if ROS is available
+# Primary PX4-ROS-COM environments (recommended)
 if ROS_AVAILABLE:
-    from .ros_utils import (
-        MessageConverter,
-        CoordinateTransform,
-        StateProcessor,
-        ImageProcessor,
-        SafetyMonitor,
-        PX4Interface,
-        PX4ControlMode,
-    )
+    try:
+        from .px4_env import (
+            PX4BaseEnv,
+            PX4ExplorerEnv,
+            PX4ResearcherEnv,
+            create_explorer_env,
+            create_researcher_env
+        )
+        PX4_ENV_AVAILABLE = True
+    except ImportError:
+        PX4_ENV_AVAILABLE = False
+        logging.warning("PX4 environments not available")
+else:
+    PX4_ENV_AVAILABLE = False
+
+# PX4 communication utilities (primary PX4-ROS-COM, legacy MAVROS)
+if ROS_AVAILABLE:
+    try:
+        from .px4_comm import (
+            PX4Interface,
+            MAVROSBridge,
+            MessageConverter
+        )
+        PX4_COMM_AVAILABLE = True
+    except ImportError:
+        PX4_COMM_AVAILABLE = False
+
+# Other ROS utilities
+if ROS_AVAILABLE:
+    try:
+        from .ros_utils import (
+            CoordinateTransform,
+            StateProcessor,
+            ImageProcessor,
+            SafetyMonitor,
+            PX4ControlMode,
+        )
+    except ImportError:
+        logging.warning("ROS utilities not fully available")
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +125,22 @@ def make_env(
     return env
 
 
-# Convenience functions for creating specific environments
+# Convenience functions for creating PX4-ROS-COM environments (recommended)
+def make_px4_explorer_env(**kwargs) -> gym.Env:
+    """Create PX4 Explorer environment with enhanced safety (PX4-ROS-COM)"""
+    if not PX4_ENV_AVAILABLE:
+        raise RuntimeError("PX4 environments not available. Install required dependencies.")
+    return create_explorer_env(**kwargs)
+
+
+def make_px4_researcher_env(**kwargs) -> gym.Env:
+    """Create PX4 Researcher environment with full control (PX4-ROS-COM)"""
+    if not PX4_ENV_AVAILABLE:
+        raise RuntimeError("PX4 environments not available. Install required dependencies.")
+    return create_researcher_env(**kwargs)
+
+
+# Legacy convenience functions
 def make_drone_env(
     namespace: str = "deepflyer",
     reward_function: str = "reach_target",
@@ -114,7 +159,7 @@ def make_cartpole_with_reward(reward_function: Union[str, Callable]) -> gym.Env:
     return make_env("CartPole-v1", reward_function=reward_function)
 
 
-# Export all
+# Export base functionality
 __all__ = [
     'make_env',
     'make_drone_env',
@@ -123,22 +168,43 @@ __all__ = [
     'CustomRewardWrapper',
 ]
 
-# Add ROS utilities to exports if available
+# Add PX4-ROS-COM environments (primary)
+if PX4_ENV_AVAILABLE:
+    __all__.extend([
+        'PX4BaseEnv',
+        'PX4ExplorerEnv',
+        'PX4ResearcherEnv',
+        'create_explorer_env',
+        'create_researcher_env',
+        'make_px4_explorer_env',
+        'make_px4_researcher_env',
+    ])
+
+# Add PX4 communication utilities (primary PX4-ROS-COM, legacy MAVROS)
+if PX4_COMM_AVAILABLE:
+    __all__.extend([
+        'PX4Interface',
+        'MAVROSBridge',
+        'MessageConverter',
+    ])
+
+# Add ROS utilities if available
 if ROS_AVAILABLE:
     __all__.extend([
-        'MessageConverter',
         'CoordinateTransform',
         'StateProcessor',
         'ImageProcessor',
         'SafetyMonitor',
-        'PX4Interface',
         'PX4ControlMode',
     ])
 
 # Export RosEnvV2 if available
 if ROS_AVAILABLE:
-    from .ros_env_v2 import RosEnvV2, make_ros_env
-    __all__.extend([
-        'RosEnvV2',
-        'make_ros_env',
-    ])
+    try:
+        from .ros_env_v2 import RosEnvV2, make_ros_env
+        __all__.extend([
+            'RosEnvV2',
+            'make_ros_env',
+        ])
+    except ImportError:
+        pass
