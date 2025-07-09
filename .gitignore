@@ -49,3 +49,52 @@ qtcreator-*
 
 # Catkin custom files
 CATKIN_IGNORE
+
+# ML/YOLO specific ignores
+# Dataset files
+*.zip
+
+# Training artifacts and runs
+runs/
+experiments/
+checkpoints/
+logs/
+
+# Virtual environments
+venv/
+env/
+.env
+
+# Pre-trained base models (downloadable)
+yolo11m.pt
+yolo11n.pt
+yolo11s.pt
+yolo11x.pt
+
+# MLflow tracking
+mlruns/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
