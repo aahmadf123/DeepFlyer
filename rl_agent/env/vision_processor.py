@@ -379,17 +379,32 @@ class HoopDetectionValidator:
 
 
 # Convenience function for easy integration
-def create_yolo11_processor(model_size: str = "n", confidence: float = 0.3) -> YOLO11VisionProcessor:
+def create_yolo11_processor(model_size: str = "n", confidence: float = 0.3, 
+                           custom_model_path: str = None) -> YOLO11VisionProcessor:
     """
     Create YOLO11 vision processor with common configurations
     
     Args:
         model_size: Model size ('n', 's', 'm', 'l', 'x') - 'n' for fastest, 'x' for most accurate
         confidence: Confidence threshold for detections
+        custom_model_path: Path to custom trained model (overrides model_size)
         
     Returns:
         Configured YOLO11VisionProcessor
     """
+    # Use custom model if provided (DeepFlyer trained model)
+    if custom_model_path:
+        processor = YOLO11VisionProcessor(
+            model_path=custom_model_path,
+            confidence_threshold=confidence,
+            nms_threshold=0.5,
+            device="auto"
+        )
+        processor.custom_trained = True
+        processor.target_classes = ["hoop"]  # Custom class for trained model
+        return processor
+    
+    # Otherwise use standard YOLO model
     model_path = f"yolo11{model_size}.pt"
     
     return YOLO11VisionProcessor(

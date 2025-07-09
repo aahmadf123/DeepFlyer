@@ -81,12 +81,32 @@ class DeepFlyerTrainingNode(Node):
         if enable_vision:
             self.vision_processor = create_yolo11_processor(
                 model_size=yolo_model_size,
-                confidence=self.config.VISION_CONFIG['confidence_threshold']
+                confidence=self.config.VISION_CONFIG['confidence_threshold'],
+                custom_model_path="weights/best.pt"  # Use DeepFlyer trained model
             )
             self.last_vision_features: Optional[VisionFeatures] = None
         else:
             self.vision_processor = None
             self.last_vision_features = None
+        
+        # Initialize ClearML tracking
+        from rl_agent.utils import ClearMLTracker, LiveDashboardStream
+        self.clearml = ClearMLTracker(
+            project_name="DeepFlyer",
+            task_name=f"PX4 Training - {node_name}"
+        )
+        self.dashboard = LiveDashboardStream(self.clearml)
+        
+        # Log configuration to ClearML
+        self.clearml.log_hyperparameters({
+            "algorithm": "P3O",
+            "observation_dim": self.config.OBSERVATION_CONFIG['dimension'],
+            "action_dim": self.config.ACTION_CONFIG['dimension'],
+            "learning_rate": self.config.P3O_CONFIG['learning_rate'],
+            "gamma": self.config.P3O_CONFIG['gamma'],
+            "clip_epsilon": self.config.P3O_CONFIG['clip_epsilon'],
+            "entropy_coef": self.config.P3O_CONFIG['entropy_coef']
+        })
         
         # Initialize safety layer if enabled
         self.safety_layer = SafetyLayer(self.config) if enable_safety else None

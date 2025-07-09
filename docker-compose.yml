@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # Redis for real-time data sharing
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  # ClearML Server (for training monitoring)
+  clearml-server:
+    image: allegroai/clearml:latest
+    ports:
+      - "8080:8080"
+      - "8008:8008" 
+      - "8081:8081"
+    environment:
+      - CLEARML_SERVER_HOST=http://localhost:8008
+      - CLEARML_WEB_HOST=http://localhost:8080
+      - CLEARML_FILES_HOST=http://localhost:8081
+    volumes:
+      - clearml_data:/opt/clearml/data
+      - clearml_logs:/opt/clearml/logs
+
+  # DeepFlyer Main System
+  deepflyer:
+    build: .
+    image: deepflyer:latest
+    privileged: true
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=1
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - CLEARML_API_HOST=http://clearml-server:8008
+      - CLEARML_WEB_HOST=http://clearml-server:8080
+      - CLEARML_FILES_HOST=http://clearml-server:8081
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./weights:/deepflyer/weights:ro
+      - ./logs:/deepflyer/logs
+      - ./models:/deepflyer/models
+    devices:
+      - /dev/dri:/dev/dri
+    depends_on:
+      - redis
+      - clearml-server
+    command: ros2 launch deepflyer full_system.launch.py
+
+  # Student API Service
+  student-api:
+    build: .
+    image: deepflyer:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - ROS_DOMAIN_ID=1
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+      - deepflyer
+    command: python api/student_api.py
+
+  # Vision Processor (separate for debugging)
+  vision-processor:
+    build: .
+    image: deepflyer:latest
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=1
+      - YOLO_MODEL_PATH=/deepflyer/weights/best.pt
+    volumes:
+      - ./weights:/deepflyer/weights:ro
+    command: ros2 run deepflyer vision_processor_node
+
+  # P3O Agent (separate for debugging)
+  p3o-agent:
+    build: .
+    image: deepflyer:latest
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=1
+      - CLEARML_API_HOST=http://clearml-server:8008
+    depends_on:
+      - clearml-server
+      - vision-processor
+    command: ros2 run deepflyer p3o_agent_node
+
+  # Optional: Jupyter notebook for experimentation
+  jupyter:
+    build: .
+    image: deepflyer:latest
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/deepflyer/notebooks
+      - ./weights:/deepflyer/weights
+      - ./data:/deepflyer/data
+    command: jupyter notebook --ip=0.0.0.0 --no-browser --allow-root
+
+volumes:
+  redis_data:
+  clearml_data:
+  clearml_logs:
+
+networks:
+  default:
+    name: deepflyer_network 

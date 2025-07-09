@@ -44,6 +44,7 @@ class VisionProcessorNode(Node):
         self.declare_parameter('confidence_threshold', 0.3)
         self.declare_parameter('processing_frequency', 30.0)
         self.declare_parameter('publish_debug_images', True)
+        self.declare_parameter('custom_model_path', 'weights/best.pt')  # DeepFlyer trained model
         
         # Get parameters
         self.use_zed = self.get_parameter('use_zed').value
@@ -51,14 +52,24 @@ class VisionProcessorNode(Node):
         self.confidence_threshold = self.get_parameter('confidence_threshold').value
         self.processing_frequency = self.get_parameter('processing_frequency').value
         self.publish_debug_images = self.get_parameter('publish_debug_images').value
+        self.custom_model_path = self.get_parameter('custom_model_path').value
         
         # Initialize vision processor
         try:
-            self.vision_processor = create_yolo11_processor(
-                model_size=self.yolo_model_size,
-                confidence=self.confidence_threshold
-            )
-            self.get_logger().info(f"YOLO11 processor initialized with model: yolo11{self.yolo_model_size}")
+            # Use custom trained model if available
+            if self.custom_model_path:
+                self.vision_processor = create_yolo11_processor(
+                    model_size=self.yolo_model_size,
+                    confidence=self.confidence_threshold,
+                    custom_model_path=self.custom_model_path
+                )
+                self.get_logger().info(f"YOLO11 processor initialized with custom model: {self.custom_model_path}")
+            else:
+                self.vision_processor = create_yolo11_processor(
+                    model_size=self.yolo_model_size,
+                    confidence=self.confidence_threshold
+                )
+                self.get_logger().info(f"YOLO11 processor initialized with model: yolo11{self.yolo_model_size}")
         except Exception as e:
             self.get_logger().error(f"Failed to initialize YOLO11: {e}")
             self.vision_processor = None
