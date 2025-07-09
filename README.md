@@ -1,35 +1,50 @@
-# DeepFlyer - Direct RL Control for Drones
+# DeepFlyer - Educational Drone Reinforcement Learning Platform
 
-DeepFlyer is a deep reinforcement learning framework for autonomous drone control and navigation using direct control.
+DeepFlyer is a production-ready educational drone reinforcement learning platform that teaches autonomous navigation through direct RL control using the P3O (Procrastinated Policy Optimization) algorithm.
 
 ## Overview
 
-DeepFlyer implements direct reinforcement learning control for drones using the P3O (Procrastinated Policy-based Observer) algorithm. Unlike traditional approaches that use RL to tune PID controllers, our approach directly outputs control commands to the drone, providing greater flexibility and performance.
+DeepFlyer implements **direct reinforcement learning control** for drones using **PX4-ROS-COM** as the primary communication protocol. Unlike traditional approaches that use RL to tune PID controllers, our approach directly outputs control commands to the drone, providing greater flexibility and performance.
 
 ## Key Features
 
-- Direct RL control using P3O algorithm
-- Seamless integration with ROS2 and MAVROS
-- ZED camera integration for visual perception
-- Path planning and obstacle avoidance
-- Safety layer to prevent dangerous actions
+- **Direct RL Control**: P3O algorithm outputs control commands directly (thrust, roll rate, pitch rate, yaw rate)
+- **PX4-ROS-COM Integration**: Lower latency communication with PX4 flight controllers
+- **ZED Camera Integration**: Real-time visual perception for navigation
+- **Educational Focus**: Two modes - Explorer (beginner-friendly) and Researcher (full control)
+- **Safety Layer**: Prevents dangerous actions while maintaining learning flexibility
+- **Sim-to-Real**: Train in simulation, deploy on real hardware
 
-## P3O Algorithm
+## Implementation Status ✅
 
-The project implements the P3O algorithm, an advanced reinforcement learning method specifically designed for drone navigation tasks. Key features of P3O include:
+All core components are implemented with production-ready code:
 
-- **Procrastinated Updates**: Postpones on-policy updates to improve sample efficiency
-- **Blended Learning**: Combines on-policy and off-policy gradients for better stability
-- **Adaptive Exploration**: Uses entropy regularization to maintain appropriate exploration
+### 1. **Custom ROS2 Message Types** (`/msg/`)
+- **VisionFeatures.msg** - YOLO11 vision processing results
+- **RLAction.msg** - 3D action commands for drone control
+- **RewardFeedback.msg** - Educational reward component breakdowns
+- **CourseState.msg** - Course navigation and progress tracking
+- **DroneState.msg** - Comprehensive drone state information
 
-## Direct Control Approach
+### 2. **ZED Mini Camera Integration** (`rl_agent/env/zed_integration.py`)
+- **ZEDInterface** abstract base class for camera integration
+- **ROS-based** and **Direct SDK** interface implementations
+- **Mock interface** for testing without hardware
 
-Unlike our previous RL-as-Supervisor approach, the direct control approach:
+### 3. **PX4-ROS-COM Communication** (`rl_agent/env/px4_comm/`)
+- **PX4Interface** - Primary PX4-ROS-COM communication (recommended)
+- **MAVROSBridge** - Legacy MAVROS communication (fallback)
+- **MessageConverter** - Coordinate transformations and message utilities
 
-1. Outputs control commands directly (thrust, roll rate, pitch rate, yaw rate)
-2. Eliminates the need for intermediate PID controllers
-3. Can discover control strategies not possible with PID control
-4. Includes a safety layer to prevent dangerous actions
+### 4. **Production Environment Classes** (`rl_agent/env/px4_base_env.py`)
+- **PX4ExplorerEnv** - Enhanced safety for beginners
+- **PX4ResearcherEnv** - Full control for advanced users
+- **PX4BaseEnv** - Common functionality base class
+
+### 5. **P3O Algorithm** (`rl_agent/algorithms/p3o.py`)
+- **Complete P3O implementation** (Procrastinated Proximal Policy Optimization)
+- **Procrastination mechanism** for stable learning
+- **GAE advantage estimation** and **policy/value networks**
 
 ## Installation
 
@@ -38,6 +53,7 @@ Unlike our previous RL-as-Supervisor approach, the direct control approach:
 - ROS2 (Rolling or Humble)
 - Python 3.8 or later
 - NVIDIA GPU recommended for training
+- PX4 flight controller (for hardware deployment)
 
 ### Setup
 
@@ -64,7 +80,25 @@ colcon build
 source install/setup.bash
 ```
 
-## Usage
+## Quick Start
+
+### Create Explorer Environment (Recommended for Beginners)
+```python
+from rl_agent.env import make_px4_explorer_env
+
+# Create environment with enhanced safety
+env = make_px4_explorer_env(
+    use_zed=True,  # Enable camera
+    spawn_position=(0.0, 0.0, 1.0)
+)
+
+obs, info = env.reset()
+for _ in range(1000):
+    action = env.action_space.sample()
+    obs, reward, terminated, truncated, info = env.step(action)
+    if terminated or truncated:
+        obs, info = env.reset()
+```
 
 ### Training a Direct Control Agent
 
@@ -82,28 +116,80 @@ source install/setup.bash
 python scripts/test_direct_control.py --test --test_time 120 --load_model ./models/direct_p3o_agent.pt
 ```
 
-### Advanced Parameters
+## Communication Architecture
 
-The P3O implementation provides several hyperparameters to customize the learning behavior:
+### Primary: PX4-ROS-COM (Recommended)
+- **Direct PX4 integration** via PX4-ROS-COM DDS protocol
+- **Lower latency** and **higher performance** than MAVROS
+- **Native ROS2 integration** with PX4 flight controller
 
-- `--procrastination_factor`: Controls how often on-policy updates occur (default: 0.95)
-- `--alpha`: Blend factor between on-policy and off-policy learning (default: 0.2)
-- `--entropy_coef`: Entropy regularization coefficient (default: 0.01)
-- `--batch_size`: Batch size for learning updates (default: 256)
-- `--learn_interval`: Time between learning updates in seconds (default: 1.0)
-- `--safety_layer`: Enable safety constraints (default: enabled)
-- `--no_safety_layer`: Disable safety constraints
+### Legacy: MAVROS (Fallback Support)
+- Traditional MAVROS bridge for backward compatibility
+- Higher latency compared to PX4-ROS-COM
+
+## P3O Algorithm
+
+The project implements the P3O algorithm, an advanced reinforcement learning method specifically designed for drone navigation tasks. Key features include:
+
+- **Procrastinated Updates**: Postpones on-policy updates to improve sample efficiency
+- **Blended Learning**: Combines on-policy and off-policy gradients for better stability
+- **Adaptive Exploration**: Uses entropy regularization to maintain appropriate exploration
+
+### P3O Configuration
+```python
+from rl_agent.algorithms import P3O, P3OConfig
+
+# Configure P3O
+config = P3OConfig(
+    procrastination_factor=0.1,  # Key P3O parameter
+    learning_rate=3e-4,
+    batch_size=64,
+    n_epochs=10
+)
+
+# Create and train P3O agent
+agent = P3O(env, config)
+agent.train(total_timesteps=100000)
+```
+
+## System Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   P3O Agent     │    │  PX4-ROS-COM     │    │  PX4 Flight     │
+│                 │◄──►│  Interface       │◄──►│  Controller     │
+│  • Policy Net   │    │  (Primary)       │    │                 │
+│  • Value Net    │    └──────────────────┘    └─────────────────┘
+│  • Procrastin.  │    ┌──────────────────┐    ┌─────────────────┐
+└─────────────────┘    │  MAVROS Bridge   │    │  ZED Mini       │
+                       │  (Legacy)        │    │  Camera         │
+                       └──────────────────┘    └─────────────────┘
+```
 
 ## Project Structure
 
 - `rl_agent/`: Reinforcement learning algorithms and models
-  - `direct_control_agent.py`: P3O implementation for direct drone control
-  - `direct_control_network.py`: Neural network architecture for direct control
-  - `direct_control_node.py`: ROS2 node for direct drone control
-  - `models/`: Base model classes and utilities
+  - `algorithms/p3o.py`: P3O implementation for direct drone control
+  - `env/px4_base_env.py`: Environment implementations for Explorer/Researcher modes
+  - `env/zed_integration.py`: ZED camera interface
+  - `env/px4_comm/`: PX4 communication utilities
+- `nodes/`: Standalone ROS2 nodes for vision processing and reward calculation
 - `scripts/`: Utility scripts for training and deployment
-  - `test_direct_control.py`: Script for training and testing direct control
-- `config/`: Configuration files for MAVROS and ZED camera
+- `msg/`: Custom ROS2 message definitions
+
+## Safety Features
+
+### Explorer Mode (Beginner-Friendly)
+- **Speed limits**: Reduced maximum velocities
+- **Boundary enforcement**: Geographic flight area restrictions
+- **Emergency landing**: Automatic safety responses
+- **Gentle control**: Smooth action filtering
+
+### Researcher Mode (Full Control)
+- **Full speed access**: Maximum performance capabilities
+- **Advanced maneuvers**: Complex flight patterns
+- **Minimal safety constraints**: Research flexibility
+- **Direct PX4 control**: Low-level command access
 
 ## Contributing
 

@@ -106,6 +106,15 @@ class DeepFlyerMLInterface:
             # Update internal config
             self.config.REWARD_CONFIG.update(new_config.to_dict())
             
+            # Update running ROS nodes in real-time
+            try:
+                from .ros_bridge import update_reward_parameters
+                success = update_reward_parameters(new_config.to_dict())
+                if not success:
+                    print("Warning: Could not update live ROS nodes")
+            except ImportError:
+                print("ROS bridge not available - config updated locally only")
+            
             # Log to ClearML if available
             if self.clearml_tracker:
                 self.clearml_tracker.log_hyperparameters(new_config.to_dict())
@@ -145,11 +154,22 @@ class DeepFlyerMLInterface:
     
     def get_live_data(self) -> Dict[str, Any]:
         """Get live training data for frontend"""
-        return {
+        base_data = {
             "metrics": asdict(self.current_metrics),
             "reward_config": self.get_reward_config().to_dict(),
             "timestamp": __import__('time').time()
         }
+        
+        # Try to get real-time data from ROS bridge
+        try:
+            from .ros_bridge import get_realtime_data
+            ros_data = get_realtime_data()
+            if ros_data:
+                base_data.update(ros_data)
+        except ImportError:
+            pass
+        
+        return base_data
 
 
 # Simple usage example for Jay
