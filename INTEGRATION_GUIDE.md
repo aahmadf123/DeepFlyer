@@ -26,7 +26,7 @@
 ## Integration Guides
 
 ### For Jay (Backend/UI Developer)
-**📋 See: `api/JAY_INTEGRATION_GUIDE.md`**
+**📋 [Complete Integration Guide →](api/JAY_INTEGRATION_GUIDE.md)**
 
 Key integration points:
 - `api/ml_interface.py` - Main ML interface class
@@ -36,7 +36,7 @@ Key integration points:
 - Real-time metrics from ClearML
 
 ### For Uma (Simulation/ROS Developer)  
-**📋 See: `UMA_INTEGRATION_GUIDE.md`**
+**📋 [Complete Integration Guide →](UMA_INTEGRATION_GUIDE.md)**
 
 Key integration points:
 - `msg/` directory - ROS message definitions
@@ -44,6 +44,11 @@ Key integration points:
 - `rl_agent/config.py` - Course layout and dimensions
 - PX4-ROS-COM topics and message flow
 - Camera and sensor simulation requirements
+
+### Technical Implementation Details
+**📚 [Complete Technical Reference →](TEAM_OVERVIEW.md)**
+
+Detailed documentation of the complete ML/RL implementation including MVP trajectory, P3O algorithm, observation/action spaces, and reward functions.
 
 ## Quick Reference
 

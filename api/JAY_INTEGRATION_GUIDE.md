@@ -1,8 +1,13 @@
-# DeepFlyer Integration Guide for Jay
-**Backend, UI, Database, Frontend Integration**
+# DeepFlyer Backend Integration Documentation
+**For Backend, UI, Database, and Frontend Development**
 
 ## Overview
-This guide tells you WHERE to find things in my RL agent codebase and HOW to integrate your backend, UI, and database with the ML system I've built. Your UI should follow AWS DeepRacer's approach exactly.
+This document describes the available ML interfaces, data structures, and integration points for building a backend system that connects to the DeepFlyer RL training platform. The UI follows AWS DeepRacer's interface pattern.
+
+### Related Documentation
+- **📚 [Technical Overview](../TEAM_OVERVIEW.md)** - Complete ML/RL system implementation details
+- **🚁 [Simulation Integration](../UMA_INTEGRATION_GUIDE.md)** - Uma's simulation interface specifications
+- **📖 [System Architecture](../INTEGRATION_GUIDE.md)** - High-level integration overview
 
 ## Key Files You Need to Know About
 
@@ -389,39 +394,39 @@ status = ml.get_system_status()
 - Real-time charts
 - Episode progress tracking
 
-## What I Don't Need You to Build
+## System Components
 
-- RL training algorithms (I handle this)
-- ClearML integration (I handle this)
-- Reward function logic (I handle this)
-- Simulation/Gazebo (Uma handles this)
+### Provided by RL System
+- RL training algorithms and P3O implementation
+- ClearML integration and metrics collection
+- Reward function execution and processing
+- Real-time training data and optimization results
 
-## What I Do Need You to Build
+### Integration Requirements
+1. **Backend API:** REST endpoints implementing the ML interface
+2. **Database:** Session storage, metrics tracking, and trial history
+3. **UI Components:** AWS DeepRacer-style interface elements
+4. **Real-time updates:** Live dashboard with streaming metrics
+5. **Code editor:** Python syntax highlighting and validation
+6. **Optimization interface:** Hyperparameter trial visualization and management
 
-1. **Backend API:** REST endpoints using my ML interface
-2. **Database:** Store sessions, metrics, trials
-3. **UI:** AWS DeepRacer-style interface
-4. **Real-time updates:** Dashboard with live metrics
-5. **Code editor:** Python editing with syntax highlighting
-6. **Optimization UI:** Hyperparameter trial visualization
+## Implementation Checklist
 
-## Quick Start Checklist
+- [ ] Database implementation using provided schema
+- [ ] API endpoint development using ML interface
+- [ ] Session creation UI with required training time field
+- [ ] Python code editor implementation for reward function editing
+- [ ] Hyperparameter control interface using configuration specifications
+- [ ] Real-time dashboard with live metrics integration
+- [ ] Optimization trial visualization and management interface
+- [ ] Complete system integration testing with ML interface
 
-- [ ] Set up database using my schema
-- [ ] Create API endpoints using my ML interface
-- [ ] Build session creation UI (training time required!)
-- [ ] Implement Python code editor for reward functions
-- [ ] Create hyperparameter sliders using my config
-- [ ] Add real-time dashboard with my metrics
-- [ ] Build optimization trial visualization
-- [ ] Test integration with my ML interface
+## Reference Documentation
 
-## Questions?
-
-If you need clarification on any part of my ML implementation, refer to:
-- `api/ml_interface.py` - Your main integration point
-- `rl_agent/config.py` - All default values and settings
-- `rl_agent/algorithms/p3o.py` - Hyperparameter definitions
+For detailed implementation specifications, reference:
+- `api/ml_interface.py` - Primary integration interface
+- `rl_agent/config.py` - Default values and system settings
+- `rl_agent/algorithms/p3o.py` - Hyperparameter specifications
 - `rl_agent/rewards/rewards.py` - Student reward function template
 
-Your job is the user interface - mine is the AI that learns to fly! 
+The user interface provides the educational platform for student interaction with the autonomous flight training system. 

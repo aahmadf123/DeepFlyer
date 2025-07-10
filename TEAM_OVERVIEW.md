@@ -4,6 +4,10 @@
 **Algorithm**: P3O (Procrastinated Policy Optimization)  
 **Hardware**: Holybro S500 + Pixhawk 6C + Pi 4B + ZED Mini + Emergency stop
 
+> **Note:** This document details the complete ML/RL system implementation. For integration with this system, see:
+> - **Backend/UI Integration:** [api/JAY_INTEGRATION_GUIDE.md](api/JAY_INTEGRATION_GUIDE.md)
+> - **Simulation Integration:** [UMA_INTEGRATION_GUIDE.md](UMA_INTEGRATION_GUIDE.md)
+
 ## Team Responsibilities
 
 ### My Role (RL/ML Developer)
@@ -13,25 +17,141 @@
 - ML interface for backend integration
 - Real-time training metrics from computer vision to flight decisions
 
-### Jay's Role (UI/Frontend/Database)
-- AWS DeepRacer-style UI (exactly like DeepRacer, not different)
-- Backend API and database integration
-- Real-time training dashboard showing live metrics
-- Hyperparameter control interface for students
-- Student session management and progress tracking
+### Jay's Components (UI/Frontend/Database)
+- AWS DeepRacer-style user interface implementation
+- Backend API and database system integration
+- Real-time training dashboard with live metrics display
+- Hyperparameter control interface for student configuration
+- Student session management and progress tracking systems
 
-### Uma's Role (Simulation/CAD/ROS)
-- Gazebo simulation environment with physics
-- 5-hoop course CAD design and physics setup
-- PX4-ROS-COM integration and message handling
-- Camera simulation (ZED Mini) for computer vision
+### Uma's Components (Simulation/CAD/ROS)
+- Gazebo simulation environment with physics engine
+- 5-hoop course CAD design and physics implementation
+- PX4-ROS-COM integration and message handling system
+- Camera simulation (ZED Mini) for computer vision processing
 - ROS topic publishing/subscribing for system integration
 
-**Integration:** Uma provides simulation → My ML system learns to fly → Jay's UI shows students what's happening
+**System Flow:** Simulation Environment → ML Training System → Educational User Interface
 
 ## My Implementation Overview
 
 I handle the complete RL/AI/Vision pipeline - from raw camera input to trained flight policies. This includes computer vision processing, state representation, reward engineering, P3O training, and all the intelligent decision-making that makes the drone learn to navigate autonomously.
+
+## MVP Flight Trajectory
+
+The Minimum Viable Product (MVP) implements a simplified flight path for educational demonstration:
+
+### MVP Flight Sequence
+1. **Takeoff** from Point A to target altitude (0.8m)
+2. **360-degree yaw rotation** to scan and detect all visible hoops using ZED Mini + YOLO11
+3. **Navigate toward** the single detected hoop on one side
+4. **Fly through** the hoop center with precision alignment
+5. **Turn around** after passing through to return through the same hoop from the other side
+6. **Land** at the original Point A
+
+### MVP vs Full System
+- **MVP:** Single hoop, round-trip passage, simplified navigation
+- **Full:** 5-hoop circuit, 3 laps, complex course navigation
+
+## P3O Algorithm (Procrastinated Policy-based Observer)
+
+P3O is a hybrid RL algorithm combining on-policy and off-policy updates for improved sample efficiency and learning stability:
+
+### Key P3O Components
+- **Procrastinated Updates:** Delays on-policy updates to improve gradient estimation and reduce variance
+- **Blended Gradient Learning:** Combines gradients from on-policy (recent experience) and off-policy (replay buffer) sources  
+- **Entropy Regularization:** Encourages exploration by penalizing premature convergence
+
+### MVP Observation Space (8D)
+The agent receives a normalized vector representing the current state:
+```python
+obs = [
+    hoop_x_center_norm,     # Horizontal position of hoop center in camera frame [-1, 1]
+    hoop_y_center_norm,     # Vertical position of hoop center [-1, 1]
+    hoop_visible,           # Binary (1 if detected, else 0)
+    hoop_distance_norm,     # Depth to hoop [0, 1]
+    drone_vx_norm,          # Forward velocity [-1, 1]
+    drone_vy_norm,          # Lateral velocity [-1, 1]
+    drone_vz_norm,          # Vertical velocity [-1, 1]
+    yaw_rate_norm           # Yaw rate [-1, 1]
+]
+```
+
+### MVP Action Space (4D)
+The agent outputs a 4-dimensional continuous action vector:
+```python
+action = [vx_cmd, vy_cmd, vz_cmd, yaw_rate_cmd]
+# vx_cmd: Forward/backward velocity (m/s)
+# vy_cmd: Left/right velocity (m/s)  
+# vz_cmd: Up/down velocity (m/s)
+# yaw_rate_cmd: Yaw rotation rate (rad/s)
+```
+
+## MVP Reward Function (Student Tunable)
+
+The MVP reward function focuses on detection, alignment, and round-trip completion:
+
+### Positive Rewards (Student Tunable)
+| Event | Default Points | Range | Description |
+|-------|----------------|-------|-------------|
+| Hoop Detected | +1 | 1-5 | The hoop is visible in the camera |
+| Horizontal Align | +5 | 1-10 | x_center close to image center |
+| Vertical Align | +5 | 1-10 | y_center close to image center |
+| Depth Closer | +10 | 5-20 | Approaching hoop |
+| Hoop Passage | +100 | 50-200 | Passed through the hoop |
+| Roundtrip Finish | +200 | 200-300 | Back through same hoop, landed |
+
+### Penalties (Student Tunable)
+| Event | Default Points | Range | Description |
+|-------|----------------|-------|-------------|
+| Collision | -25 | -10 to -100 | Hit an object or wall |
+| Missed Hoop | -25 | -10 to -50 | Passed beside the hoop |
+| Drift/Lost | -10 | -5 to -25 | Hoop lost from camera |
+| Time Penalty | -1 | -0.5 to -2 | Per timestep |
+
+## Student Training Configuration
+
+### Training Time (Student Specified)
+Students specify training time in minutes via UI:
+```bash
+--train_time 60  # 60 minutes
+```
+Maps to total environment steps: `max_steps = steps_per_second * 60 * train_time_minutes`
+
+### MVP Hyperparameters (Random Search)
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| learning_rate | 1e-4 to 3e-3 | Step size for optimizer |
+| clip_ratio | 0.1 to 0.3 | Controls PPO-style policy update clipping |
+| entropy_coef | 1e-3 to 0.1 | Weight for entropy term to encourage exploration |
+| batch_size | 64 to 256 | Minibatch size for updates |
+| rollout_steps | 512 to 2048 | Environment steps per update |
+| num_epochs | 3 to 10 | Epochs per policy update |
+| gamma | 0.9 to 0.99 | Discount factor for future rewards |
+| gae_lambda | 0.9 to 0.99 | GAE parameter for advantage estimation |
+
+Default values provided, students can adjust via UI for learning optimization.
+
+## ZED Mini Vision Processing
+
+### YOLO11 Hoop Detection
+Using YOLO bounding box and depth image for precise hoop center detection:
+
+**Bounding Box Center:**
+- `(x_center, y_center)` from YOLO detection (normalized)
+
+**Hoop Distance:**  
+- Use `depth_image[y_center, x_center]`
+- Median filter over bounding box region
+
+**Center Alignment Detection:**
+- Check if `|x_center| < 0.1` and `|y_center| < 0.1`
+- Check if depth is continuously decreasing (approaching)
+
+**Edge Detection:**
+- Use bounding box width/height as proximity proxy
+- Box growth indicates closer approach
+- Box shift/disappearance indicates miss or drift
 
 ## ROS2 Topics Reference
 
@@ -81,10 +201,10 @@ I handle the complete RL/AI/Vision pipeline - from raw camera input to trained f
 - `lap_completed` (bool)
 
 **CourseState.msg Fields:**
-- `current_target_hoop_id` (int32)
-- `lap_number` (int32)
-- `hoops_completed` (int32)
-- `course_progress` (float32) - 0 to 1
+- `target_hoop_detected` (bool)
+- `flight_phase` (int32) - 0=takeoff, 1=scan, 2=approach, 3=through, 4=return, 5=land
+- `round_trip_progress` (float32) - 0 to 1
+- `episode_time` (float32)
 
 ## Vision Processing Pipeline (My Implementation)
 
@@ -143,32 +263,11 @@ The node will run at 30Hz to balance processing load with real-time requirements
 
 ## P3O RL System (My Implementation)
 
-### State Representation Strategy
-I'm designing a compact 12-dimensional state vector that captures all the essential information the drone needs for navigation decisions. The key is balancing information richness with processing efficiency.
-
-**State Vector Breakdown:**
-| Index | Component | Range | Description |
-|-------|-----------|-------|-------------|
-| 0-2 | Direction to hoop | -1 to 1 | Normalized x,y,z direction vector |
-| 3-4 | Current velocity | -1 to 1 | Forward, lateral velocity |
-| 5-6 | Navigation metrics | 0 to 1 | Distance to target, velocity alignment |
-| 7-9 | Vision features | -1 to 1 | Hoop alignment, visual distance, visibility |
-| 10-11 | Course progress | 0 to 1 | Lap progress, overall completion |
-
-**State Processing Logic:**
-- I normalize all values to prevent any single feature from dominating the learning
-- Velocity alignment measures how well the drone's current movement aligns with the optimal direction to the target
-- Course progress helps the agent understand long-term objectives beyond just the immediate hoop
-- Vision features are preprocessed to be robust against lighting changes and partial occlusions
+### P3O State Processing for MVP
+The MVP uses the 8D observation space detailed above, with all values normalized to ensure stable learning. The P3O algorithm processes these features to make flight decisions for the single-hoop round-trip navigation task.
 
 ### Action Space Design
-I'm using a continuous 3D action space that gives the drone fine-grained control while remaining intuitive:
-
-| Action | Range | Control | Max Speed |
-|--------|-------|---------|-----------|
-| `lateral_cmd` | -1 to 1 | Left/Right | 0.8 m/s |
-| `vertical_cmd` | -1 to 1 | Up/Down | 0.4 m/s |
-| `speed_cmd` | -1 to 1 | Slow/Fast | 0.6 m/s base |
+I'm using the continuous 4D action space detailed above that gives the drone fine-grained control while remaining intuitive for the MVP round-trip navigation.
 
 **Action Translation Logic:**
 - Actions are smoothed to prevent jerky movements that could destabilize the drone
@@ -192,15 +291,14 @@ I'm implementing P3O with specific adaptations for drone navigation challenges:
 - Value function and policy networks are separate to prevent interference
 - Gradient clipping at 0.5 to prevent training instability from outlier episodes
 
-## Course Layout
+## MVP Course Setup
 
 ### Physical Setup
-- **Course Size**: 2.1m × 1.6m flight area
+- **Course Size**: 2.1m × 1.6m flight area 
 - **Flight Height**: 0.8m above ground
-- **Hoop Count**: 5 hoops per circuit
+- **Hoop Count**: 1 hoop for round-trip navigation
 - **Hoop Diameter**: 0.8m
-- **Lap Requirement**: 3 complete circuits
-- **Navigation**: Hoop 1 → 2 → 3 → 4 → 5 → repeat
+- **Navigation**: Takeoff → Scan → Approach → Through → Return → Through → Land
 
 ## Reward Engineering (My Implementation)
 
@@ -210,12 +308,11 @@ I'm designing a modular reward system that students can tune without breaking th
 **Positive Rewards (Student Tunable):**
 | Event | Default Points | Range | Description |
 |-------|----------------|-------|-------------|
-| Hoop Passage | +50 | 25-100 | Successfully through hoop |
+| Hoop Passage | +100 | 50-200 | Successfully through hoop |
 | Approach Target | +10 | 5-20 | Getting closer to target |
 | Center Bonus | +20 | 10-40 | Precise center passage |
 | Visual Alignment | +5 | 1-10 | Hoop centered in view |
-| Lap Complete | +100 | 50-200 | Full circuit finished |
-| Course Complete | +500 | 200-1000 | All 3 laps done |
+| Round-trip Complete | +200 | 200-300 | Back through same hoop and landed |
 
 **Penalties (Student Tunable):**
 | Event | Default Points | Range | Description |
@@ -250,7 +347,7 @@ Total_Reward = Progress_Reward + Alignment_Reward + Speed_Reward - Penalties - S
 - **Visual alignment**: `alignment_reward = student_weight * (1 - abs(hoop_center_offset))`
 - **Hoop center offset**: Normalized pixel distance from image center (-1 to +1)
 - **Approach angle**: Additional reward for approaching hoop perpendicularly rather than at angles
-- **Multi-hoop awareness**: Penalty reduction when multiple hoops visible (prevents confusion)
+- **Round-trip awareness**: Bonus for completing return journey through same hoop
 
 **3. Speed Management Reward:**
 - **Adaptive speed**: Rewards faster flight in open areas, slower near targets
@@ -326,8 +423,8 @@ I'm creating several specialized ROS2 nodes that work together:
 
 **2. RL Agent Node** (`p3o_agent.py`)  
 - Subscribes to vision features, drone state, and course progress
-- Processes 12D state vector for neural network input
-- Outputs 3D action commands for flight control
+- Processes 8D state vector for neural network input (MVP)
+- Outputs 4D action commands for flight control (vx, vy, vz, yaw_rate)
 - Manages training episodes and policy updates
 - Publishes reward feedback for analysis
 
@@ -338,9 +435,9 @@ I'm creating several specialized ROS2 nodes that work together:
 - Publishes detailed reward breakdowns for UI
 
 **4. Course Manager Node** (`course_manager.py`)
-- Tracks which hoop is the current target
-- Manages lap counting and course completion
-- Handles course reset and episode management
+- Tracks single hoop navigation for MVP round-trip
+- Manages episode reset and completion detection
+- Handles takeoff/landing sequence management
 - Publishes course state for RL agent
 
 ### Data Flow Architecture

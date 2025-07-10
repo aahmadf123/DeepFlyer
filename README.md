@@ -2,9 +2,31 @@
 
 DeepFlyer is a production-ready educational drone reinforcement learning platform that teaches autonomous navigation through direct RL control using the P3O (Procrastinated Policy Optimization) algorithm.
 
+## Project Navigation
+
+**🏗️ New to the project?** Start here based on your role:
+
+### For Team Members
+- **📋 [Jay (Backend/UI Developer)](api/JAY_INTEGRATION_GUIDE.md)** - Complete backend integration documentation
+- **🚁 [Uma (Simulation/ROS Developer)](UMA_INTEGRATION_GUIDE.md)** - Simulation and ROS integration specifications  
+- **⚙️ [Technical Overview](TEAM_OVERVIEW.md)** - Detailed technical reference for all ML/RL implementation
+
+### For Project Understanding
+- **📖 [Integration Overview](INTEGRATION_GUIDE.md)** - High-level system architecture and integration strategy
+- **📚 [Detailed Design Docs](docs/)** - In-depth technical design documentation
+
 ## Overview
 
 DeepFlyer implements **direct reinforcement learning control** for drones using **PX4-ROS-COM** as the primary communication protocol. Unlike traditional approaches that use RL to tune PID controllers, our approach directly outputs control commands to the drone, providing greater flexibility and performance.
+
+### MVP Flight Trajectory
+The Minimum Viable Product demonstrates:
+1. **Takeoff** from Point A to 0.8m altitude
+2. **360° scan** to detect hoops using ZED Mini + YOLO11
+3. **Navigate** toward single detected hoop
+4. **Fly through** hoop with precision alignment
+5. **Return** through same hoop from other side
+6. **Land** at original Point A
 
 ## Key Features
 
