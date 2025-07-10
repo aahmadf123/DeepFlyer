@@ -4,16 +4,16 @@ DeepFlyer is a production-ready educational drone reinforcement learning platfor
 
 ## Project Navigation
 
-**🏗️ New to the project?** Start here based on your role:
+Start here:
 
 ### For Team Members
-- **📋 [Jay (Backend/UI Developer)](api/JAY_INTEGRATION_GUIDE.md)** - Complete backend integration documentation
-- **🚁 [Uma (Simulation/ROS Developer)](UMA_INTEGRATION_GUIDE.md)** - Simulation and ROS integration specifications  
-- **⚙️ [Technical Overview](TEAM_OVERVIEW.md)** - Detailed technical reference for all ML/RL implementation
+- **[Jay (Backend/UI Developer)](api/JAY_INTEGRATION_GUIDE.md)** - Complete backend integration documentation
+- **[Uma (Simulation/ROS Developer)](UMA_INTEGRATION_GUIDE.md)** - Simulation and ROS integration specifications
+- **[Technical Overview](TEAM_OVERVIEW.md)** - Detailed technical reference for all ML/RL implementation
 
 ### For Project Understanding
-- **📖 [Integration Overview](INTEGRATION_GUIDE.md)** - High-level system architecture and integration strategy
-- **📚 [Detailed Design Docs](docs/)** - In-depth technical design documentation
+- **[Integration Overview](INTEGRATION_GUIDE.md)** - High-level system architecture and integration strategy
+- **[Detailed Design Docs](docs/)** - In-depth technical design documentation
 
 ## Overview
 
@@ -37,7 +37,7 @@ The Minimum Viable Product demonstrates:
 - **Safety Layer**: Prevents dangerous actions while maintaining learning flexibility
 - **Sim-to-Real**: Train in simulation, deploy on real hardware
 
-## Implementation Status ✅
+## Implementation Status
 
 All core components are implemented with production-ready code:
 
@@ -71,7 +71,7 @@ All core components are implemented with production-ready code:
 
 ### Prerequisites
 
-- ROS2 (Rolling or Humble)
+- ROS2 (Humble)
 - Python 3.8 or later
 - NVIDIA GPU recommended for training
 - PX4 flight controller (for hardware deployment)
@@ -83,7 +83,7 @@ All core components are implemented with production-ready code:
 ```bash
 mkdir -p ~/deepflyer_ws/src
 cd ~/deepflyer_ws/src
-git clone https://github.com/your-username/DeepFlyer.git
+git clone https://github.com/aahmadf123/DeepFlyer.git
 ```
 
 2. Install Python dependencies:
@@ -139,12 +139,12 @@ python scripts/test_direct_control.py --test --test_time 120 --load_model ./mode
 
 ## Communication Architecture
 
-### Primary: PX4-ROS-COM (Recommended)
+### Primary: PX4-ROS-COM (What we are using)
 - **Direct PX4 integration** via PX4-ROS-COM DDS protocol
 - **Lower latency** and **higher performance** than MAVROS
 - **Native ROS2 integration** with PX4 flight controller
 
-### Legacy: MAVROS (Fallback Support)
+### Legacy: MAVROS (Fallback)
 - Traditional MAVROS bridge for backward compatibility
 - Higher latency compared to PX4-ROS-COM
 
@@ -187,16 +187,158 @@ agent.train(total_timesteps=100000)
                        └──────────────────┘    └─────────────────┘
 ```
 
-## Project Structure
+## 📁 Project File Structure
 
-- `rl_agent/`: Reinforcement learning algorithms and models
-  - `algorithms/p3o.py`: P3O implementation for direct drone control
-  - `env/px4_base_env.py`: Environment implementation for drone control
-  - `env/zed_integration.py`: ZED camera interface
-  - `env/px4_comm/`: PX4 communication utilities
-- `nodes/`: Standalone ROS2 nodes for vision processing and reward calculation
-- `scripts/`: Utility scripts for training and deployment
-- `msg/`: Custom ROS2 message definitions
+### Root Directory
+```
+DeepFlyer/
+├── README.md                    # Main project documentation (this file)
+├── TEAM_OVERVIEW.md            # Technical reference for all teammates
+├── INTEGRATION_GUIDE.md        # High-level system architecture
+├── UMA_INTEGRATION_GUIDE.md    # ROS/Simulation integration
+├── requirements.txt            # Python dependencies
+├── pyproject.toml             # Python project configuration
+├── package.xml                # ROS2 package definition
+├── CMakeLists.txt            # Build configuration
+├── docker-compose.yml        # Docker setup for development
+└── Dockerfile.ml             # ML training container
+```
+
+### Core Implementation Directories
+
+#### `rl_agent/` - Reinforcement Learning Core
+**What**: Complete P3O algorithm implementation and training infrastructure
+**Who**: Primary responsibility
+
+```
+rl_agent/
+├── config.py                  # P3O hyperparameters & course configuration
+├── algorithms/
+│   ├── p3o.py                # P3O algorithm implementation  
+│   └── replay_buffer.py      # Experience replay for training
+├── models/
+│   └── base_model.py         # Neural network architectures
+├── rewards/
+│   └── rewards.py            # Student-tunable reward functions
+├── env/                      # 🌍 Training environments (not for teammates)
+├── direct_control_agent.py   # 🎮 Direct RL control agent
+├── direct_control_node.py    # 📡 ROS2 node for direct control
+├── px4_training_node.py      # 🚁 PX4 training integration
+└── utils.py                  # Utility functions
+```
+
+#### 🌐 `api/` - Backend Integration
+**What**: ML interface for backend integration with ClearML and databases
+**Who**: (Backend/UI) - primary integration point
+
+```
+api/
+├── JAY_INTEGRATION_GUIDE.md   # Complete backend integration guide
+├── ml_interface.py            # Main ML API interface (Jay's entry point)
+├── ros_bridge.py              # ROS-to-REST API bridge
+└── neon_database_schema.sql   # Database schema for student data
+```
+
+#### `nodes/` - ROS2 System Nodes  
+**What**: Production ROS2 nodes for system integration
+**Who**: (ROS/Simulation) - these are what simulation must interface with
+
+```
+nodes/
+├── vision_processor_node.py   # YOLO11 hoop detection + ZED Mini
+├── rl_agent_node.py           # General RL training infrastructure
+├── p3o_agent_node.py          # P3O algorithm + 8D→4D control
+├── px4_interface_node.py      # PX4-ROS-COM + safety layer
+├── reward_calculator_node.py  # Student-tunable reward computation
+└── course_manager_node.py     # MVP trajectory coordination
+```
+
+#### 📨 `msg/` - ROS2 Message Definitions
+**What**: Custom message types for system communication
+**Who**: (ROS/Simulation) - these define interface contracts
+
+```
+msg/
+├── DroneState.msg             # Complete drone state information
+├── VisionFeatures.msg         # YOLO11 vision processing results
+├── CourseState.msg            # Course navigation & progress
+├── RLAction.msg               # 4D action commands [vx,vy,vz,yaw_rate]
+└── RewardFeedback.msg         # Educational reward breakdowns
+```
+
+### Development & Testing
+
+#### 🧪 `scripts/` - Testing & Integration
+**What**: Essential testing scripts for system validation
+**Who**: for testing their integrations
+
+```
+scripts/
+├── test_integration.py        # Complete system integration test
+├── test_direct_control.py     # P3O direct control testing
+└── test_yolo11_vision.py      # Vision pipeline testing
+```
+
+#### 🔬 `tests/` - Unit Testing
+**What**: Core component unit tests
+**Who**: Development validation
+
+```
+tests/
+├── test_rewards.py            # Reward function testing
+├── test_env.py                # Environment testing
+├── test_logger.py             # Logging system testing
+└── test_registry.py           # Component registry testing
+```
+
+### Configuration & Deployment
+
+#### `launch/` - ROS2 Launch Files
+**What**: System startup configurations
+**Who**: (ROS/Simulation) for system deployment
+
+```
+launch/
+├── deepflyer_ml.launch.py     # ML training system launch
+└── mvp_system.launch.py       # MVP demonstration launch
+```
+
+#### 📚 `docs/` - Technical Documentation  
+**What**: Detailed technical design documents
+**Who**: Reference material for all team members
+
+```
+docs/
+├── DEEPFLYER_CONCEPT.md       # Project concept & motivation
+├── PX4_RL_IMPLEMENTATION.md   # PX4 integration details
+├── YOLO11_INTEGRATION_GUIDE.md # Vision system integration
+└── APPROACH_EVOLUTION.md      # Technical approach evolution
+```
+
+#### `weights/` - Model Assets
+**What**: Pre-trained model weights
+**Who**: Used by vision processing and RL training
+
+```
+weights/
+└── best.pt                    # Pre-trained YOLO11 hoop detection model
+```
+
+### Quick Navigation for Team Members
+
+**(Backend/UI) - Start Here:**
+- `api/JAY_INTEGRATION_GUIDE.md` - Your complete integration guide
+- `api/ml_interface.py` - Main entry point for backend integration  
+- `api/neon_database_schema.sql` - Database schema
+
+**(ROS/Simulation) - Start Here:**  
+- `UMA_INTEGRATION_GUIDE.md` - Your complete integration guide
+- `msg/` - Message definitions your simulation must publish/subscribe
+- `nodes/` - ROS2 nodes your simulation must interface with
+
+**Technical Implementation Details:**
+- `TEAM_OVERVIEW.md` - Complete technical reference
+- `rl_agent/config.py` - All system parameters and configuration
 
 ## Safety Features
 
@@ -216,17 +358,3 @@ Contributions to DeepFlyer are welcome! Please feel free to submit pull requests
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Citation
-
-If you use DeepFlyer in your research, please cite:
-
-```
-@misc{deepflyer2023,
-  author = {DeepFlyer Team},
-  title = {DeepFlyer: Direct Deep Reinforcement Learning for Autonomous UAV Control},
-  year = {2023},
-  publisher = {GitHub},
-  journal = {GitHub Repository},
-  howpublished = {\url{https://github.com/your-username/DeepFlyer}}
-}
-```

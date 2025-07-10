@@ -5,11 +5,13 @@ bin/
 lib/
 msg_gen/
 srv_gen/
-msg/*Action.msg
-msg/*ActionFeedback.msg
+# Auto-generated ROS action messages (more specific patterns)
+msg/*ActionActionGoal.msg
+msg/*ActionActionResult.msg
+msg/*ActionActionFeedback.msg
 msg/*ActionGoal.msg
 msg/*ActionResult.msg
-msg/*Feedback.msg
+msg/*ActionFeedback.msg
 msg/*Goal.msg
 msg/*Result.msg
 msg/_*.py

@@ -1,18 +1,24 @@
 """
-DeepFlyer Configuration
-Configuration for the educational drone RL platform with hoop navigation
+Configuration for the drone RL platform with hoop navigation
+
+This module contains all configuration classes for:
+- P3O reinforcement learning algorithm
+- Course layout and hoop positioning  
+- Vision processing and camera settings
+- Action space and control parameters
+- Reward function settings
 """
 
-from typing import Dict, Any, List, Tuple
 import numpy as np
+from typing import Dict, List, Tuple, Any, Optional
+from dataclasses import dataclass, field
 
 
+@dataclass
 class DeepFlyerConfig:
-    """Main configuration class for DeepFlyer educational drone RL platform"""
+    """Main configuration class for DeepFlyer drone RL platform"""
     
-    # ============================================================================
-    # COURSE CONFIGURATION - Hoop Navigation Setup
-    # ============================================================================
+    # Course Configuration
     
     # Course Layout
     COURSE_DIMENSIONS = {
@@ -31,9 +37,7 @@ class DeepFlyerConfig:
         'detection_distance': 5.0 # maximum detection range
     }
     
-    # ============================================================================
-    # RL AGENT CONFIGURATION - P3O Algorithm
-    # ============================================================================
+    # RL Agent Configuration
     
     # P3O Hyperparameters
     P3O_CONFIG = {
@@ -76,17 +80,15 @@ class DeepFlyerConfig:
         }
     }
     
-    # ============================================================================
-    # VISION SYSTEM CONFIGURATION - YOLO11 + ZED Mini
-    # ============================================================================
+    # Vision System Configuration
     
     VISION_CONFIG = {
-        # YOLO11 Settings
-        'yolo_model': 'yolo11n.pt',     # Fast model for real-time processing
+        # YOLO11 Settings  
+        'yolo_model': 'weights/best.pt',  # DeepFlyer custom-trained hoop detection model
         'confidence_threshold': 0.3,
         'nms_threshold': 0.5,
-        'target_classes': ['sports ball', 'frisbee', 'donut'],  # Hoop-like objects
-        'processing_frequency': 30,      # Hz
+        'target_classes': ['hoop'],       # Custom-trained class for hoop detection
+        'processing_frequency': 30,       # Hz
         
         # ZED Mini Settings
         'camera_config': {
@@ -104,9 +106,7 @@ class DeepFlyerConfig:
         }
     }
     
-    # ============================================================================
-    # PX4-ROS-COM CONFIGURATION
-    # ============================================================================
+    # PX4-ROS-COM Configuration
     
     PX4_CONFIG = {
         # ROS2 Topics
@@ -137,12 +137,10 @@ class DeepFlyerConfig:
         }
     }
     
-    # ============================================================================
-    # REWARD FUNCTION CONFIGURATION
-    # ============================================================================
+    # Reward Function Configuration
     
     REWARD_CONFIG = {
-        # Student-Tunable Positive Rewards
+        # Positive Rewards
         'hoop_approach_reward': 10.0,
         'hoop_passage_reward': 50.0,
         'hoop_center_bonus': 20.0,
@@ -154,7 +152,7 @@ class DeepFlyerConfig:
         'smooth_flight_bonus': 1.0,
         'precision_bonus': 15.0,
         
-        # Student-Tunable Penalties
+        # Penalties
         'wrong_direction_penalty': -2.0,
         'hoop_miss_penalty': -25.0,
         'collision_penalty': -100.0,
@@ -173,12 +171,10 @@ class DeepFlyerConfig:
         }
     }
     
-    # ============================================================================
-    # TRAINING CONFIGURATION
-    # ============================================================================
+    # Training Configuration
     
     TRAINING_CONFIG = {
-        # Episode Parameters (Student Adjustable)
+        # Episode Parameters
         'max_episodes': 1000,
         'max_steps_per_episode': 500,
         'evaluation_frequency': 50,
@@ -201,9 +197,7 @@ class DeepFlyerConfig:
         ]
     }
     
-    # ============================================================================
-    # HARDWARE CONFIGURATION
-    # ============================================================================
+    # Hardware Configuration
     
     HARDWARE_CONFIG = {
         'drone_frame': 'Holybro S500',

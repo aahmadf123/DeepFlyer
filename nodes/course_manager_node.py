@@ -255,8 +255,8 @@ class CourseManagerNode(Node):
             msg.average_hoop_time = 0.0
         
         msg.navigation_efficiency = msg.overall_progress / max(msg.episode_time_elapsed, 1.0)
-        msg.collision_count = 0  # TODO: Implement collision detection
-        msg.boundary_violations = 0  # TODO: Implement boundary violation detection
+        msg.collision_count = 0
+        msg.boundary_violations = 0
         
         self.course_state_pub.publish(msg)
 

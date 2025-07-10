@@ -183,14 +183,15 @@ Using YOLO bounding box and depth image for precise hoop center detection:
 ### RL Training System
 | Topic | Type | Direction | Fields | Purpose |
 |-------|------|-----------|--------|---------|
-| `/deepflyer/rl_action` | Custom `RLAction.msg` | PUBLISH | `lateral_cmd`, `vertical_cmd`, `speed_cmd` | RL actions (-1 to 1) |
+| `/deepflyer/rl_action` | Custom `RLAction.msg` | PUBLISH | `vx_cmd`, `vy_cmd`, `vz_cmd`, `yaw_rate_cmd` | MVP 4D actions (-1 to 1) |
 | `/deepflyer/reward_feedback` | Custom `RewardFeedback.msg` | PUBLISH | See below | Reward breakdown |
 | `/deepflyer/course_state` | Custom `CourseState.msg` | SUBSCRIBE | See below | Course progress |
 
-**RLAction.msg Fields:**
-- `lateral_cmd` (float32) - left/right (-1 to 1)
-- `vertical_cmd` (float32) - up/down (-1 to 1)
-- `speed_cmd` (float32) - slow/fast (-1 to 1)
+**RLAction.msg Fields (MVP 4D Actions):**
+- `vx_cmd` (float32) - forward/backward velocity (-1 to 1)
+- `vy_cmd` (float32) - left/right velocity (-1 to 1)
+- `vz_cmd` (float32) - up/down velocity (-1 to 1)
+- `yaw_rate_cmd` (float32) - yaw rotation rate (-1 to 1)
 
 **RewardFeedback.msg Fields:**
 - `total_reward` (float32)
@@ -412,33 +413,50 @@ Like AWS DeepRacer, students can adjust training parameters to optimize learning
 
 ## Integration Strategy & Data Flow
 
-### My Node Architecture
-I'm creating several specialized ROS2 nodes that work together:
+### My Node Architecture (6 Specialized Nodes)
+I'm creating six specialized ROS2 nodes for robust system separation:
 
-**1. Vision Processor Node** (`vision_processor.py`)
-- Subscribes to ZED Mini RGB and depth streams
-- Runs YOLO11 hoop detection
-- Publishes processed vision features for RL agent
-- Handles calibration and camera parameter management
+**1. Vision Processor Node** (`vision_processor_node.py`)
+- **Purpose**: YOLO11-based hoop detection with ZED Mini integration
+- **Subscribes to**: `/zed_mini/zed_node/rgb/image_rect_color`, `/zed_mini/zed_node/depth/depth_registered`
+- **Publishes to**: `/deepflyer/vision_features` (8D observation components)
+- **Function**: Real-time hoop detection, depth processing, alignment calculation
+- **Model**: Uses `weights/best.pt` (custom) with `yolo11l.pt` fallback
 
-**2. RL Agent Node** (`p3o_agent.py`)  
-- Subscribes to vision features, drone state, and course progress
-- Processes 8D state vector for neural network input (MVP)
-- Outputs 4D action commands for flight control (vx, vy, vz, yaw_rate)
-- Manages training episodes and policy updates
-- Publishes reward feedback for analysis
+**2. Main RL Agent Node** (`rl_agent_node.py`)
+- **Purpose**: General RL training infrastructure and episode management
+- **Subscribes to**: All system state topics for comprehensive learning
+- **Publishes to**: Training metrics, episode management signals
+- **Function**: Handles training loops, experience replay, model checkpointing
+- **Algorithm**: Framework-agnostic RL infrastructure
 
-**3. Reward Calculator Node** (`reward_calculator.py`)
-- Subscribes to all relevant state information
-- Computes multi-component reward signals
-- Handles student parameter updates dynamically
-- Publishes detailed reward breakdowns for UI
+**3. P3O Agent Node** (`p3o_agent_node.py`)
+- **Purpose**: P3O-specific algorithm implementation and control
+- **Subscribes to**: `/deepflyer/vision_features`, `/deepflyer/drone_state`, `/deepflyer/course_state` 
+- **Publishes to**: `/deepflyer/rl_action` (4D actions: vx, vy, vz, yaw_rate)
+- **Function**: 8D→4D neural network inference, P3O learning updates
+- **Algorithm**: Procrastinated Policy Optimization with custom hoop navigation
 
-**4. Course Manager Node** (`course_manager.py`)
-- Tracks single hoop navigation for MVP round-trip
-- Manages episode reset and completion detection
-- Handles takeoff/landing sequence management
-- Publishes course state for RL agent
+**4. PX4 Interface Node** (`px4_interface_node.py`)  
+- **Purpose**: PX4-ROS-COM communication and safety layer
+- **Subscribes to**: `/deepflyer/rl_action`, `/fmu/out/vehicle_local_position`, `/fmu/out/vehicle_status`
+- **Publishes to**: `/fmu/in/trajectory_setpoint`, `/fmu/in/offboard_control_mode`, `/deepflyer/course_state`
+- **Function**: RL action → PX4 commands, safety constraints, emergency handling
+- **Safety**: Velocity limits, geofencing, emergency landing protocols
+
+**5. Reward Calculator Node** (`reward_calculator_node.py`)
+- **Purpose**: Multi-component reward calculation with student configurability  
+- **Subscribes to**: All state topics (vision, drone, course, actions)
+- **Publishes to**: `/deepflyer/reward_feedback` (detailed component breakdown)
+- **Function**: Student-tunable reward computation, educational feedback generation
+- **Configuration**: YAML-based reward parameters that students can modify
+
+**6. Course Manager Node** (`course_manager_node.py`)
+- **Purpose**: MVP trajectory state management and episode coordination
+- **Subscribes to**: Drone position, vision features, flight status
+- **Publishes to**: `/deepflyer/course_state` (MVP flight phases)
+- **Function**: Phase tracking (takeoff→scan→approach→through→return→land), episode reset
+- **Navigation**: Single-hoop round-trip coordination
 
 ### Data Flow Architecture
 
@@ -458,10 +476,10 @@ graph TD
     STATUS["/fmu/out/vehicle_status<br/>px4_msgs/VehicleStatus"]
     
     %% Processing Nodes
-    VISION["Vision Processor Node<br/>vision_processor.py<br/>📊 YOLO11 + Depth Integration"]
-    RL["RL Agent Node<br/>p3o_agent.py<br/>🧠 P3O Algorithm"]
-    REWARD["Reward Calculator Node<br/>reward_calculator.py<br/>🎯 Multi-Component Rewards"]
-    COURSE["Course Manager Node<br/>course_manager.py<br/>📍 Navigation Logic"]
+    VISION["Vision Processor Node<br/>vision_processor.py<br/>YOLO11 + Depth Integration"]
+    RL["RL Agent Node<br/>p3o_agent.py<br/>P3O Algorithm"]
+REWARD["Reward Calculator Node<br/>reward_calculator.py<br/>Multi-Component Rewards"]
+COURSE["Course Manager Node<br/>course_manager.py<br/>Navigation Logic"]
     
     %% Processed Data Topics
     VF["/deepflyer/vision_features<br/>Custom VisionFeatures.msg<br/>hoop_detected, distance, alignment"]
@@ -474,7 +492,7 @@ graph TD
     MODE["/fmu/in/offboard_control_mode<br/>px4_msgs/OffboardControlMode"]
     
     %% Student Interface
-    UI["Student Web Interface<br/>🎛️ Reward Tuning<br/>📈 Training Monitoring<br/>📊 Performance Analytics"]
+    UI["Student Web Interface<br/>Reward Tuning<br/>Training Monitoring<br/>Performance Analytics"]
     
     %% Data Flow
     ZED --> RGB

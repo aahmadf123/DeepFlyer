@@ -11,9 +11,7 @@ import numpy as np
 from enum import Enum
 from typing import Dict, Any, Callable, Optional, Union
 
-# =============================================================================
-# MVP HOOP NAVIGATION REWARD FUNCTIONS
-# =============================================================================
+# MVP Hoop Navigation Reward Functions
 
 class MVPRewardComponentType(Enum):
     """MVP reward component types for hoop navigation task."""
@@ -321,9 +319,7 @@ class MVPRewardFunction:
         self.config.update_from_dict(config_dict)
         self.config.validate_ranges()
 
-# =============================================================================
-# LEGACY REWARD FUNCTIONS (for backward compatibility)
-# =============================================================================
+# Legacy Reward Functions
 
 # Registry for reward functions
 REGISTRY = {}
@@ -499,9 +495,7 @@ register_reward("heading_error", heading_error_reward)
 # Register MVP reward
 register_reward("mvp_hoop_navigation", create_mvp_hoop_reward)
 
-# =============================================================================
-# USER REWARD FUNCTION - Legacy function for backward compatibility
-# =============================================================================
+# User Reward Function
 
 def reward_function(params):
     """

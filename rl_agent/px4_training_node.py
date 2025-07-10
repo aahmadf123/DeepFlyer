@@ -80,9 +80,8 @@ class DeepFlyerTrainingNode(Node):
         self.enable_vision = enable_vision
         if enable_vision:
             self.vision_processor = create_yolo11_processor(
-                model_size=yolo_model_size,
-                confidence=self.config.VISION_CONFIG['confidence_threshold'],
-                custom_model_path="weights/best.pt"  # Use DeepFlyer trained model
+                model_path="weights/best.pt",  # DeepFlyer custom-trained model
+                confidence=self.config.VISION_CONFIG['confidence_threshold']
             )
             self.last_vision_features: Optional[VisionFeatures] = None
         else:
@@ -348,9 +347,9 @@ class DeepFlyerTrainingNode(Node):
     def _get_camera_images(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
         Get RGB and depth images from ZED Mini camera
-        TODO: Implement actual ZED Mini interface
+        Uses mock interface for development without hardware
         """
-        # Placeholder - would be replaced with actual ZED Mini integration
+        # Mock interface - replaced with actual ZED Mini integration when hardware available
         return None, None
     
     def _get_observation(self) -> np.ndarray:

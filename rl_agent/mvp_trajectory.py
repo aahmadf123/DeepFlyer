@@ -1,26 +1,27 @@
 """
-MVP Trajectory Implementation for DeepFlyer
+Trajectory Implementation
 
-This module demonstrates the complete MVP flight trajectory:
-1. Takeoff from Point A
-2. Perform 360° yaw rotation to scan and detect hoops using YOLO11m + depth camera
-3. Navigate toward and fly through the single detected hoop
-4. Turn around after flying through to return through the same hoop
-5. Land at the original Point A
+This module implements the complete flight trajectory:
+1. Takeoff to target altitude
+2. 360-degree scan to detect hoops
+3. Navigate toward detected hoop
+4. Fly through hoop (first passage)
+5. Return through same hoop (second passage)
+6. Return to origin and land
 
-This serves as both a working implementation and educational reference.
+This serves as the production trajectory implementation for the DeepFlyer system.
 """
 
-import numpy as np
 import time
-import logging
-from typing import Dict, Any, Optional, Tuple, List
-from dataclasses import dataclass
+import numpy as np
 from enum import Enum
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional, Any
+import logging
 
-from .env.mvp_trajectory import MVPTrajectoryEnv, MVPFlightPhase
-from .algorithms.p3o import P3O, P3OConfig, MVPTrainingConfig
-from .rewards import MVPRewardFunction, MVPRewardConfig
+# RL agent imports
+from rl_agent.config import DeepFlyerConfig
+from rl_agent.rewards import MVPRewardFunction, MVPRewardConfig
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +201,7 @@ class MVPPhaseController:
         # Avoid duplicates
         for existing_hoop in self.detected_hoops:
             if np.linalg.norm(existing_hoop['position'] - position) < 1.0:
-            return
+                return
         
         hoop_info = {
             'position': position.copy(),
@@ -372,156 +373,4 @@ class MVPActionGenerator:
         else:
             vz_cmd = 0.0   # Landed
         
-        return np.array([0.0, 0.0, vz_cmd, 0.0])
-
-
-class MVPTrajectoryDemo:
-    """Complete MVP trajectory demonstration"""
-    
-    def __init__(self, reward_config: Optional[Dict[str, float]] = None,
-                 trajectory_config: Optional[MVPTrajectoryConfig] = None):
-        """
-        Initialize MVP trajectory demo
-        
-        Args:
-            reward_config: Student-tunable reward configuration
-            trajectory_config: Trajectory execution configuration
-        """
-        self.trajectory_config = trajectory_config or MVPTrajectoryConfig()
-        
-        # Initialize environment
-        self.env = MVPTrajectoryEnv(reward_config=reward_config)
-        
-        # Initialize controllers
-        self.phase_controller = MVPPhaseController(self.trajectory_config)
-        self.action_generator = MVPActionGenerator(self.trajectory_config)
-        
-        # Trajectory state
-        self.episode_count = 0
-        self.total_reward = 0.0
-        self.best_reward = float('-inf')
-        
-        logger.info("MVP Trajectory Demo initialized")
-    
-    def run_episode(self, max_steps: int = 1000) -> Dict[str, Any]:
-        """
-        Run a complete MVP trajectory episode
-        
-        Args:
-            max_steps: Maximum steps per episode
-            
-        Returns:
-            Episode statistics
-        """
-        observation, info = self.env.reset()
-        self.phase_controller = MVPPhaseController(self.trajectory_config)
-        
-        episode_reward = 0.0
-        episode_steps = 0
-        phase_history = []
-        
-        for step in range(max_steps):
-            # Get drone state
-            drone_state = self.env.state.get_all()
-            drone_state['spawn_position'] = self.env.spawn_position
-            
-            # Update flight phase
-            current_phase = self.phase_controller.update_phase(observation, drone_state)
-            
-            # Generate action based on current phase
-            action = self.action_generator.generate_action(current_phase, observation, drone_state)
-            
-            # Execute action
-            observation, reward, terminated, truncated, info = self.env.step(action)
-            
-            episode_reward += reward
-            episode_steps += 1
-            
-            # Record phase
-            phase_info = self.phase_controller.get_phase_info()
-            phase_history.append({
-                'step': step,
-                'phase': current_phase.value,
-                'reward': reward,
-                'observation': observation.copy(),
-                'action': action.copy(),
-                **phase_info
-            })
-            
-            # Check if episode is done
-            if terminated or truncated:
-                break
-        
-        # Episode statistics
-        episode_stats = {
-            'episode': self.episode_count,
-            'total_reward': episode_reward,
-            'steps': episode_steps,
-            'completed': current_phase == MVPFlightPhase.COMPLETED,
-            'final_phase': current_phase.value,
-            'hoop_passages': self.phase_controller.hoop_passages,
-            'detected_hoops': len(self.phase_controller.detected_hoops),
-            'phase_history': phase_history
-        }
-        
-        self.episode_count += 1
-        self.total_reward += episode_reward
-        self.best_reward = max(self.best_reward, episode_reward)
-        
-        logger.info(f"Episode {self.episode_count}: Reward={episode_reward:.1f}, "
-                   f"Phase={current_phase.value}, Steps={episode_steps}")
-        
-        return episode_stats
-    
-    def get_trajectory_summary(self) -> Dict[str, Any]:
-        """Get summary of trajectory performance"""
-        return {
-            'episodes_run': self.episode_count,
-            'total_reward': self.total_reward,
-            'average_reward': self.total_reward / max(self.episode_count, 1),
-            'best_reward': self.best_reward,
-            'trajectory_config': self.trajectory_config.to_dict()
-        }
-
-
-# Convenience functions
-def create_mvp_demo(reward_config: Optional[Dict[str, float]] = None) -> MVPTrajectoryDemo:
-    """Create MVP trajectory demonstration"""
-    return MVPTrajectoryDemo(reward_config=reward_config)
-
-
-def run_mvp_demo_episode() -> Dict[str, Any]:
-    """Run a single MVP trajectory episode with default settings"""
-    demo = create_mvp_demo()
-    return demo.run_episode()
-
-
-def demonstrate_mvp_phases():
-    """Demonstrate each phase of the MVP trajectory"""
-    phases = [
-        "TAKEOFF: Ascend to 1.5m altitude",
-        "SCAN_360: Rotate 360° to detect hoops using YOLO11+depth",
-        "NAVIGATE_TO_HOOP: Approach the detected hoop",
-        "THROUGH_HOOP_FIRST: Fly through hoop (first passage)",
-        "RETURN_TO_HOOP: Turn around and approach hoop again",
-        "THROUGH_HOOP_SECOND: Fly through hoop (return passage)",
-        "RETURN_TO_ORIGIN: Navigate back to Point A",
-        "LANDING: Descend and land at Point A",
-        "COMPLETED: Mission accomplished!"
-    ]
-    
-    print("MVP Flight Trajectory Phases:")
-    print("=" * 50)
-    for i, phase in enumerate(phases, 1):
-        print(f"{i}. {phase}")
-    print("=" * 50)
-
-
-if __name__ == "__main__":
-    # Demonstrate MVP trajectory phases
-    demonstrate_mvp_phases()
-    
-    # Run a demo episode
-    print("\nRunning MVP trajectory demo...")
-    episode_stats = run_mvp_demo_episode()
-    print(f"Demo complete: {episode_stats['final_phase']} in {episode_stats['steps']} steps") 
+        return np.array([0.0, 0.0, vz_cmd, 0.0]) 

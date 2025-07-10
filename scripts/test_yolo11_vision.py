@@ -59,17 +59,17 @@ class YOLO11VisionDemo:
                 model_size=model_size,
                 confidence=confidence
             )
-            logger.info("✅ YOLO11 initialized successfully!")
+            logger.info("YOLO11 initialized successfully!")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to initialize YOLO11: {e}")
+            logger.error(f"Failed to initialize YOLO11: {e}")
             logger.error("Make sure you have installed: pip install ultralytics torch torchvision")
             return False
     
     def test_synthetic_hoop_image(self):
         """Test with a synthetic hoop image"""
-        logger.info("🎯 Testing with synthetic hoop image...")
+        logger.info("Testing with synthetic hoop image...")
         
         # Create a synthetic image with orange hoop-like objects
         image = self.create_synthetic_hoop_image()
@@ -128,12 +128,12 @@ class YOLO11VisionDemo:
         Args:
             duration: Test duration in seconds
         """
-        logger.info(f"🎥 Testing with webcam feed for {duration} seconds...")
+        logger.info(f"Testing with webcam feed for {duration} seconds...")
         
         # Try to open webcam
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
-            logger.warning("❌ Could not open webcam")
+            logger.warning("Could not open webcam")
             return False
         
         # Set camera resolution
@@ -199,7 +199,7 @@ class YOLO11VisionDemo:
         Args:
             num_frames: Number of frames to process
         """
-        logger.info(f"⚡ Benchmarking YOLO11 performance with {num_frames} frames...")
+        logger.info(f"Benchmarking YOLO11 performance with {num_frames} frames...")
         
         # Generate test images
         test_images = []
@@ -231,7 +231,7 @@ class YOLO11VisionDemo:
         total_time = time.time() - start_time
         avg_fps = num_frames / total_time
         
-        logger.info(f"✅ Benchmark complete!")
+        logger.info(f"Benchmark complete!")
         logger.info(f"Total time: {total_time:.2f}s")
         logger.info(f"Average FPS: {avg_fps:.1f}")
         
@@ -239,7 +239,7 @@ class YOLO11VisionDemo:
     
     def compare_with_traditional_cv(self):
         """Compare YOLO11 with traditional computer vision approach"""
-        logger.info("📊 Comparing YOLO11 vs Traditional CV...")
+        logger.info("Comparing YOLO11 vs Traditional CV...")
         
         # Create test image
         test_image = self.create_synthetic_hoop_image()
@@ -257,7 +257,7 @@ class YOLO11VisionDemo:
         
         # Compare results
         print("\n" + "="*60)
-        print("🔍 COMPUTER VISION COMPARISON")
+        print("COMPUTER VISION COMPARISON")
         print("="*60)
         print(f"YOLO11:")
         print(f"  - Processing time: {yolo_time:.2f}ms")
@@ -340,7 +340,7 @@ class YOLO11VisionDemo:
     
     def display_results(self, image: np.ndarray, features, processing_time: float, title: str):
         """Display detection results"""
-        print(f"\n🎯 {title} Results:")
+        print(f"\n{title} Results:")
         print(f"   Processing time: {processing_time:.2f}ms")
         print(f"   Hoops detected: {len(features.all_hoops)}")
         
@@ -383,7 +383,7 @@ class YOLO11VisionDemo:
         detection_rate = sum(1 for c in self.metrics['detection_counts'] if c > 0) / len(self.metrics['detection_counts'])
         
         print("\n" + "="*50)
-        print("📊 PERFORMANCE SUMMARY")
+        print("PERFORMANCE SUMMARY")
         print("="*50)
         print(f"Total frames processed: {self.metrics['total_frames']}")
         print(f"Average processing time: {avg_time:.2f}ms")
@@ -396,18 +396,18 @@ class YOLO11VisionDemo:
 
 def main():
     """Main demo function"""
-    print("🚁 YOLO11 Vision Integration Demo for DeepFlyer")
+    print("YOLO11 Vision Integration Demo for DeepFlyer")
     print("=" * 60)
     
     demo = YOLO11VisionDemo()
     
     # Setup YOLO11
     if not demo.setup_yolo11(model_size="n", confidence=0.3):
-        print("❌ Failed to setup YOLO11. Exiting...")
+        print("Failed to setup YOLO11. Exiting...")
         return
     
     while True:
-        print("\n🎮 Choose a demo option:")
+        print("\nChoose a demo option:")
         print("1. Test with synthetic hoop image")
         print("2. Test with webcam feed (30 seconds)")
         print("3. Performance benchmark")
@@ -430,17 +430,17 @@ def main():
                 demo.compare_with_traditional_cv()
             
             elif choice == "5":
-                print("👋 Goodbye!")
+                print("Goodbye!")
                 break
             
             else:
-                print("❌ Invalid choice. Please enter 1-5.")
+                print("Invalid choice. Please enter 1-5.")
         
         except KeyboardInterrupt:
-            print("\n\n👋 Demo interrupted by user")
+            print("\n\nDemo interrupted by user")
             break
         except Exception as e:
-            logger.error(f"❌ Error during demo: {e}")
+            logger.error(f"Error during demo: {e}")
 
 
 if __name__ == "__main__":

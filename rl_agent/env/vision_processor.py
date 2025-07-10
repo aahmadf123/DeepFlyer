@@ -42,7 +42,7 @@ class YOLO11VisionProcessor:
     Advanced vision processor using YOLO11 for hoop detection in DeepFlyer
     """
     
-    def __init__(self, model_path: str = "yolo11n.pt", 
+    def __init__(self, model_path: str = "weights/best.pt", 
                  confidence_threshold: float = 0.3,
                  nms_threshold: float = 0.5,
                  target_classes: List[str] = None,
@@ -51,7 +51,7 @@ class YOLO11VisionProcessor:
         Initialize YOLO11 vision processor
         
         Args:
-            model_path: Path to YOLO11 model or model name (yolo11n.pt, yolo11s.pt, etc.)
+            model_path: Path to YOLO11 model (defaults to DeepFlyer custom model, fallback to yolo11l.pt)
             confidence_threshold: Minimum confidence for detections
             nms_threshold: Non-maximum suppression threshold
             target_classes: List of class names to detect (None for all classes)
@@ -379,37 +379,40 @@ class HoopDetectionValidator:
 
 
 # Convenience function for easy integration
-def create_yolo11_processor(model_size: str = "n", confidence: float = 0.3, 
-                           custom_model_path: str = None) -> YOLO11VisionProcessor:
+def create_yolo11_processor(model_path: str = "weights/best.pt", confidence: float = 0.3) -> YOLO11VisionProcessor:
     """
-    Create YOLO11 vision processor with common configurations
+    Create YOLO11 vision processor for DeepFlyer hoop detection
     
     Args:
-        model_size: Model size ('n', 's', 'm', 'l', 'x') - 'n' for fastest, 'x' for most accurate
+        model_path: Path to YOLO11 model (defaults to DeepFlyer custom-trained model)
         confidence: Confidence threshold for detections
-        custom_model_path: Path to custom trained model (overrides model_size)
         
     Returns:
         Configured YOLO11VisionProcessor
     """
-    # Use custom model if provided (DeepFlyer trained model)
-    if custom_model_path:
-        processor = YOLO11VisionProcessor(
-            model_path=custom_model_path,
-            confidence_threshold=confidence,
-            nms_threshold=0.5,
-            device="auto"
-        )
-        processor.custom_trained = True
-        processor.target_classes = ["hoop"]  # Custom class for trained model
-        return processor
+    import os
     
-    # Otherwise use standard YOLO model
-    model_path = f"yolo11{model_size}.pt"
+    # Try to use the specified model, fallback to yolo11l.pt if not found
+    final_model_path = model_path
+    if not os.path.exists(model_path) and model_path == "weights/best.pt":
+        logger.warning(f"Custom model {model_path} not found, falling back to yolo11l.pt")
+        final_model_path = "yolo11l.pt"  # High accuracy fallback
     
-    return YOLO11VisionProcessor(
-        model_path=model_path,
+    processor = YOLO11VisionProcessor(
+        model_path=final_model_path,
         confidence_threshold=confidence,
         nms_threshold=0.5,
         device="auto"
-    ) 
+    )
+    
+    # Set configuration based on model type
+    if "best.pt" in final_model_path or "hoop" in final_model_path.lower():
+        processor.custom_trained = True
+        processor.target_classes = ["hoop"]  # Custom class for trained model
+        logger.info("Using DeepFlyer custom-trained hoop detection model")
+    else:
+        processor.custom_trained = False
+        processor.target_classes = ["sports ball", "frisbee", "donut"]  # General objects
+        logger.info(f"Using general YOLO11 model: {final_model_path}")
+    
+    return processor 

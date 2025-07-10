@@ -8,12 +8,12 @@ DeepFlyer now supports **YOLO11** (You Only Look Once version 11), the latest st
 
 ### **Advantages over Traditional Computer Vision:**
 
-1. **🎯 Higher Accuracy**: YOLO11 provides robust detection even with varying lighting, angles, and hoop appearances
-2. **⚡ Real-time Performance**: Optimized for edge devices with 30+ FPS on GPU, 10+ FPS on CPU
-3. **🔧 Less Manual Tuning**: No need to fine-tune HSV color ranges or contour parameters
-4. **🌟 Better Generalization**: Works with different hoop colors, sizes, and environments
-5. **📊 Confidence Scores**: Provides detection confidence for better decision making
-6. **🔄 Future-Proof**: Easy to retrain for custom objects or improved accuracy
+1. **Higher Accuracy**: YOLO11 provides robust detection even with varying lighting, angles, and hoop appearances
+2. **Real-time Performance**: Optimized for edge devices with 30+ FPS on GPU, 10+ FPS on CPU
+3. **Less Manual Tuning**: No need to fine-tune HSV color ranges or contour parameters
+4. **Better Generalization**: Works with different hoop colors, sizes, and environments
+5. **Confidence Scores**: Provides detection confidence for better decision making
+6. **Future-Proof**: Easy to retrain for custom objects or improved accuracy
 
 ### **Performance Comparison:**
 
@@ -392,4 +392,4 @@ For issues and questions:
 
 ---
 
-**🚁 Happy Flying with Enhanced Vision!** 
+**Happy Flying with Enhanced Vision!** 

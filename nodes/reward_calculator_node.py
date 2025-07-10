@@ -321,18 +321,18 @@ class RewardCalculatorNode(Node):
         msg.lap_completion_bonus = components.get('lap_completion_bonus', 0.0)
         msg.course_completion_bonus = components.get('course_completion_bonus', 0.0)
         msg.smooth_flight_bonus = components.get('smooth_flight_bonus', 0.0)
-        msg.precision_bonus = 0.0  # TODO: Implement precision bonus
+        msg.precision_bonus = 0.0
         
         # Penalty breakdown
         msg.wrong_direction_penalty = components.get('wrong_direction_penalty', 0.0)
-        msg.hoop_miss_penalty = 0.0  # TODO: Implement hoop miss detection
-        msg.collision_penalty = 0.0  # TODO: Implement collision detection
+        msg.hoop_miss_penalty = 0.0
+        msg.collision_penalty = 0.0
         msg.slow_progress_penalty = components.get('slow_progress_penalty', 0.0)
-        msg.erratic_flight_penalty = 0.0  # TODO: Implement erratic flight detection
+        msg.erratic_flight_penalty = 0.0
         
         # Safety penalties
         msg.boundary_violation_penalty = components.get('boundary_violation_penalty', 0.0)
-        msg.emergency_landing_penalty = 0.0  # TODO: Implement emergency detection
+        msg.emergency_landing_penalty = 0.0
         
         # Context information
         if self.current_course_state:

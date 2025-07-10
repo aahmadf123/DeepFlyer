@@ -579,42 +579,30 @@ def create_mvp_depth_processor(**kwargs) -> MVPDepthProcessor:
     return MVPDepthProcessor(**kwargs)
 
 
-def process_single_frame(processor: MVPDepthProcessor) -> Dict[str, Any]:
-    """Process a single frame and return full observation data"""
-    hoop_x, hoop_y, hoop_visible, hoop_distance = processor.process_frame()
-    
-    return {
-        'hoop_x_center_norm': hoop_x,
-        'hoop_y_center_norm': hoop_y,
-        'hoop_visible': hoop_visible,
-        'hoop_distance_norm': hoop_distance,
-        'detection': processor.get_last_detection(),
-        'stats': processor.get_detection_stats()
-    }
-
-
-if __name__ == "__main__":
-    # Demo depth processing
-    print("MVP Depth Processing Demo")
-    print("=" * 40)
-    
-    processor = create_mvp_depth_processor()
-    
-    if processor.connect():
-        print("✓ Connected to camera and loaded models")
+def process_single_frame(processor) -> Dict[str, float]:
+    """Process a single frame with the MVP depth processor"""
+    try:
+        rgb_image, depth_image = processor.capture_frame()
+        if rgb_image is None or depth_image is None:
+            return {
+                'hoop_visible': 0.0,
+                'hoop_x_center_norm': 0.0,
+                'hoop_y_center_norm': 0.0,
+                'hoop_distance_norm': 1.0
+            }
         
-        # Process a few frames
-        for i in range(10):
-            result = process_single_frame(processor)
-            print(f"Frame {i+1}: Hoop visible={result['hoop_visible']}, "
-                  f"Center=({result['hoop_x_center_norm']:.2f}, {result['hoop_y_center_norm']:.2f}), "
-                  f"Distance={result['hoop_distance_norm']:.2f}")
-            time.sleep(0.1)
-        
-        stats = processor.get_detection_stats()
-        print(f"\nStats: {stats['fps']:.1f} FPS, {stats['detection_rate']:.1%} detection rate")
-        
-        processor.disconnect()
-    else:
-        print("✗ Failed to connect to camera or load models")
-        print("This is expected if ZED camera is not connected or YOLO model is not available") 
+        features = processor.process_frame(rgb_image, depth_image)
+        return {
+            'hoop_visible': features['hoop_detected'],
+            'hoop_x_center_norm': features['hoop_x_center'],
+            'hoop_y_center_norm': features['hoop_y_center'],
+            'hoop_distance_norm': features['hoop_distance']
+        }
+    except Exception as e:
+        logger.error(f"Error processing frame: {e}")
+        return {
+            'hoop_visible': 0.0,
+            'hoop_x_center_norm': 0.0,
+            'hoop_y_center_norm': 0.0,
+            'hoop_distance_norm': 1.0
+        } 

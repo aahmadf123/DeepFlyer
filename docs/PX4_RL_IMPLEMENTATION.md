@@ -375,7 +375,7 @@ from px4_msgs.msg import (
 1. **👀 Observation Processing**: Converting drone sensor data into information your AI can understand
 2. **🧠 RL Agent**: The neural network that learns and makes decisions  
 3. **🎮 Action Processing**: Converting AI decisions into drone commands
-4. **🏆 Reward Function**: Teaching the AI what "good flying" looks like
+4. **Reward Function**: Teaching the AI what "good flying" looks like
 
 Let's dive into each one:
 
@@ -1008,10 +1008,10 @@ Think of PX4 like an experienced airline pilot who handles all the technical fly
 #### 1. Low-Level Flight Control (The "Flying Skills")
 
 **What this means in simple terms:**
-- ✅ **Attitude Control**: Keeps the drone level and stable (like how you automatically balance when walking)
-- ✅ **Motor Control**: Manages individual propeller speeds (like how your car's engine automatically adjusts cylinder firing)
-- ✅ **Sensor Fusion**: Combines information from multiple sensors to know exactly where it is (like how your brain combines vision, inner ear, and touch to know your position)
-- ✅ **Safety Systems**: Built-in emergency procedures (like how elevators automatically stop at floors and won't fall)
+- **Attitude Control**: Keeps the drone level and stable (like how you automatically balance when walking)
+- **Motor Control**: Manages individual propeller speeds (like how your car's engine automatically adjusts cylinder firing)
+- **Sensor Fusion**: Combines information from multiple sensors to know exactly where it is (like how your brain combines vision, inner ear, and touch to know your position)
+- **Safety Systems**: Built-in emergency procedures (like how elevators automatically stop at floors and won't fall)
 
 **Why you don't need to worry about this:**
 These are incredibly complex systems that took aerospace engineers years to perfect. PX4 handles all of this automatically so you can focus on teaching the drone WHERE to go, not HOW to fly.
@@ -1019,10 +1019,10 @@ These are incredibly complex systems that took aerospace engineers years to perf
 #### 2. Navigation and Control (The "Autopilot Features")
 
 **What this means in simple terms:**
-- ✅ **Position Control**: When you say "go to coordinates X,Y", it figures out how to get there
-- ✅ **Velocity Control**: When you say "fly forward at 0.5 m/s", it maintains that exact speed
-- ✅ **Altitude Hold**: Automatically maintains height even if wind pushes the drone around
-- ✅ **Rate Control**: Smooths out any jerky movements to maintain stable flight
+- **Position Control**: When you say "go to coordinates X,Y", it figures out how to get there
+- **Velocity Control**: When you say "fly forward at 0.5 m/s", it maintains that exact speed
+- **Altitude Hold**: Automatically maintains height even if wind pushes the drone around
+- **Rate Control**: Smooths out any jerky movements to maintain stable flight
 
 **Real-world analogy:**
 Like cruise control in a car - you set the desired speed, and the car automatically manages the engine, transmission, and brakes to maintain that speed regardless of hills or wind.
@@ -1030,9 +1030,9 @@ Like cruise control in a car - you set the desired speed, and the car automatica
 #### 3. Hardware Interface (The "Technical Plumbing")
 
 **What this means in simple terms:**
-- ✅ **Sensor Drivers**: Reads data from all the sensors and makes sure they're working correctly
-- ✅ **Communication**: Handles all the technical details of sending/receiving messages
-- ✅ **System Health**: Constantly monitors battery, sensors, motors for any problems
+- **Sensor Drivers**: Reads data from all the sensors and makes sure they're working correctly
+- **Communication**: Handles all the technical details of sending/receiving messages
+- **System Health**: Constantly monitors battery, sensors, motors for any problems
 
 **Why this abstraction is powerful:**
 You can focus on the fun AI/ML parts without needing to become an electrical engineer, flight dynamics expert, or embedded systems programmer.

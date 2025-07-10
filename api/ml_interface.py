@@ -12,9 +12,9 @@ import time
 from datetime import datetime
 
 # Import ML components
-from rl_agent.config import DeepFlyerConfig
+from rl_agent.config import P3OConfig
 from rl_agent.utils import ClearMLTracker
-from rl_agent.algorithms.p3o import HyperparameterOptimizer, P3OConfig
+from rl_agent.algorithms.p3o import HyperparameterOptimizer
 
 
 @dataclass
@@ -113,7 +113,7 @@ class DeepFlyerMLInterface:
     """
     
     def __init__(self):
-        self.config = DeepFlyerConfig()
+        self.config = P3OConfig()
         self.clearml_tracker: Optional[ClearMLTracker] = None
         self.hyperopt: Optional[HyperparameterOptimizer] = None
         self.training_start_time: Optional[float] = None
@@ -125,14 +125,12 @@ class DeepFlyerMLInterface:
                 project_name="DeepFlyer",
                 task_name="Backend Integration"
             )
-            print("✅ ClearML connection established")
+            print("ClearML connection established")
         except Exception as e:
-            print(f"❌ ClearML connection failed: {e}")
+            print(f"ClearML connection failed: {e}")
             self.clearml_tracker = None
     
-    # ========================================================================
-    # LIVE TRAINING METRICS (For Jay's real-time dashboard)
-    # ========================================================================
+    # Live Training Metrics
     
     def get_live_training_metrics(self) -> TrainingMetrics:
         """
@@ -237,11 +235,11 @@ class DeepFlyerMLInterface:
         episode_progress = 0.0
         time_progress = 0.0
         
-        if self.config.TRAINING_CONFIG['max_episodes'] > 0:
-            episode_progress = (metrics.current_episode / self.config.TRAINING_CONFIG['max_episodes']) * 100
+        max_episodes = 1000  # Default value for production
+        episode_progress = (metrics.current_episode / max_episodes) * 100
         
-        if self.training_start_time and 'train_time_minutes' in self.config.TRAINING_CONFIG:
-            target_time = self.config.TRAINING_CONFIG['train_time_minutes'] * 60
+        target_time = 3600  # Default 1 hour training
+        if self.training_start_time:
             time_progress = (metrics.training_time_elapsed / target_time) * 100
         
         return {
@@ -249,7 +247,7 @@ class DeepFlyerMLInterface:
             'time_progress': min(time_progress, 100.0),
             'status': 'training' if metrics.is_training else 'stopped',
             'current_episode': metrics.current_episode,
-            'total_episodes': self.config.TRAINING_CONFIG.get('max_episodes', 1000),
+            'total_episodes': 1000,
             'elapsed_time': metrics.training_time_elapsed,
             'estimated_remaining': self._estimate_remaining_time()
         }
@@ -260,14 +258,12 @@ class DeepFlyerMLInterface:
         
         if metrics.current_episode > 0 and metrics.training_time_elapsed > 0:
             time_per_episode = metrics.training_time_elapsed / metrics.current_episode
-            remaining_episodes = self.config.TRAINING_CONFIG.get('max_episodes', 1000) - metrics.current_episode
+            remaining_episodes = 1000 - metrics.current_episode
             return time_per_episode * remaining_episodes
         
         return 0.0
     
-    # ========================================================================
-    # HYPERPARAMETER OPTIMIZATION
-    # ========================================================================
+    # Hyperparameter Optimization
     
     def start_hyperparameter_optimization(self, num_trials: int = 20) -> bool:
         """
@@ -283,10 +279,10 @@ class DeepFlyerMLInterface:
             base_config = P3OConfig()
             self.hyperopt = HyperparameterOptimizer(base_config, self.clearml_tracker)
             
-            print(f"🔍 Starting hyperparameter optimization with {num_trials} trials")
+            print(f"Starting hyperparameter optimization with {num_trials} trials")
             return True
         except Exception as e:
-            print(f"❌ Failed to start hyperparameter optimization: {e}")
+            print(f"Failed to start hyperparameter optimization: {e}")
             return False
     
     def get_optimization_trials(self) -> List[HyperparameterTrial]:
@@ -341,9 +337,7 @@ class DeepFlyerMLInterface:
         
         return self.hyperopt.get_optimization_suggestions()
     
-    # ========================================================================
-    # TRAINING CONTROL
-    # ========================================================================
+    # Training Control
     
     def start_training(self, 
                       training_minutes: int,
@@ -372,19 +366,19 @@ class DeepFlyerMLInterface:
             if reward_config:
                 self.update_reward_config(reward_config)
             
-            # Update training time
-            self.config.TRAINING_CONFIG['train_time_minutes'] = training_minutes
+            # Store training time
+            self.training_minutes = training_minutes
             
             # Update hyperparameters
             if hyperparameters:
-                self.config.P3O_CONFIG.update(hyperparameters)
+                self.config.update_from_dict(hyperparameters)
             
             # Log configuration to ClearML
             if self.clearml_tracker:
                 full_config = {
                     'algorithm': 'P3O',
                     'training_minutes': training_minutes,
-                    'hyperparameters': self.config.P3O_CONFIG,
+                    'hyperparameters': self.config.__dict__,
                     'reward_config': reward_config.to_dict() if reward_config else None
                 }
                 self.clearml_tracker.log_hyperparameters(full_config)
@@ -393,11 +387,11 @@ class DeepFlyerMLInterface:
             self.current_metrics.is_training = True
             self.training_start_time = time.time()
             
-            print(f"🚀 Training started for {training_minutes} minutes")
+            print(f"Training started for {training_minutes} minutes")
             return True
             
         except Exception as e:
-            print(f"❌ Failed to start training: {e}")
+            print(f"Failed to start training: {e}")
             return False
     
     def stop_training(self) -> bool:
@@ -406,22 +400,21 @@ class DeepFlyerMLInterface:
             self.current_metrics.is_training = False
             self.training_start_time = None
             
-            print("⏹️ Training stopped")
+            print("Training stopped")
             return True
         except Exception:
             return False
     
     def get_reward_config(self) -> RewardConfig:
         """Get current reward configuration"""
-        reward_cfg = self.config.REWARD_CONFIG
         return RewardConfig(
-            hoop_approach_reward=reward_cfg.get('hoop_approach_reward', 10.0),
-            hoop_passage_reward=reward_cfg.get('hoop_passage_reward', 50.0),
-            visual_alignment_reward=reward_cfg.get('visual_alignment_reward', 5.0),
-            forward_progress_reward=reward_cfg.get('forward_progress_reward', 3.0),
-            wrong_direction_penalty=reward_cfg.get('wrong_direction_penalty', -2.0),
-            hoop_miss_penalty=reward_cfg.get('hoop_miss_penalty', -25.0),
-            collision_penalty=reward_cfg.get('collision_penalty', -100.0)
+            hoop_approach_reward=10.0,
+            hoop_passage_reward=50.0,
+            visual_alignment_reward=5.0,
+            forward_progress_reward=3.0,
+            wrong_direction_penalty=-2.0,
+            hoop_miss_penalty=-25.0,
+            collision_penalty=-100.0
         )
     
     def update_reward_config(self, new_config: RewardConfig) -> bool:
@@ -432,8 +425,8 @@ class DeepFlyerMLInterface:
             True if successful, False otherwise
         """
         try:
-            # Update internal config
-            self.config.REWARD_CONFIG.update(new_config.to_dict())
+            # Store reward config for later use
+            self.reward_config = new_config
             
             # Log to ClearML
             if self.clearml_tracker:
@@ -442,15 +435,39 @@ class DeepFlyerMLInterface:
                     'timestamp': time.time()
                 })
             
-            print("✅ Reward configuration updated")
+            print("Reward configuration updated")
             return True
         except Exception as e:
-            print(f"❌ Failed to update reward config: {e}")
+            print(f"Failed to update reward config: {e}")
             return False
     
-    # ========================================================================
-    # SYSTEM STATUS
-    # ========================================================================
+    def get_student_config(self) -> Dict[str, Any]:
+        """
+        Get student-tunable configuration for UI display
+        
+        Returns:
+            Dict with hyperparameter configuration for frontend
+        """
+        return self.config.get_student_config()
+    
+    def update_hyperparameters(self, params: Dict[str, Any]) -> bool:
+        """
+        Update hyperparameters from student input
+        
+        Args:
+            params: Dictionary of hyperparameter updates
+            
+        Returns:
+            True if successful
+        """
+        try:
+            self.config.update_from_dict(params)
+            return True
+        except Exception as e:
+            print(f"Failed to update hyperparameters: {e}")
+            return False
+    
+    # System Status
     
     def get_system_status(self) -> Dict[str, Any]:
         """
