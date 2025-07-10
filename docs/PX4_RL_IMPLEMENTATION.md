@@ -60,7 +60,7 @@ DeepFlyer is designed like **AWS DeepRacer** but for drones:
 - **DeepFlyer**: Drone learns to fly through a 3D obstacle course, avoiding walls and objects
 
 **Key Educational Benefits:**
-1. **No Coding Required for Students**: Students only adjust reward parameters, not write complex flight code
+1. **Simple Code Editing for Students**: Students edit reward function Python code like AWS DeepRacer, not complex flight code
 2. **Visual Learning**: Students see immediate results when they change rewards
 3. **Safe Environment**: All flying happens in a controlled lab space with safety systems
 4. **Progressive Difficulty**: Start with simple paths, advance to complex obstacle courses

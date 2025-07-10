@@ -28,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger("test_safety_rewards")
 
 # Import our environment and safety/reward classes
-from rl_agent.env.px4_base_env import PX4BaseEnv, PX4ExplorerEnv, PX4ResearcherEnv
+from rl_agent.env.px4_base_env import PX4BaseEnv
 from rl_agent.env.safety_layer import SafetyLayer, BeginnerSafetyLayer, SafetyBounds
 from rl_agent.rewards import RewardFunction, REGISTRY, create_cross_track_and_heading_reward
 

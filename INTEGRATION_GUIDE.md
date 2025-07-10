@@ -1,20 +1,96 @@
 # DeepFlyer Integration Guide
 
-This comprehensive guide explains how to integrate the DeepFlyer reinforcement learning platform with your drone system. It's designed to provide both high-level architectural understanding and detailed implementation instructions.
+## Team Responsibilities
 
-## Table of Contents
-1. [Introduction to DeepFlyer](#introduction-to-deepflyer)
-2. [System Architecture](#system-architecture)
-3. [Core Components Explained](#core-components-explained)
-4. [ROS and MAVROS Fundamentals](#ros-and-mavros-fundamentals)
-5. [ZED Camera Integration](#zed-camera-integration)
-6. [Dependencies and Setup](#dependencies-and-setup)
-7. [Topic Structure and Message Flow](#topic-structure-and-message-flow)
-8. [Integration Scenarios](#integration-scenarios)
-9. [Configuration Reference](#configuration-reference)
-10. [Testing and Validation](#testing-and-validation)
-11. [Troubleshooting](#troubleshooting)
-12. [Appendix: Code Examples](#appendix-code-examples)
+**My Role (RL/ML Development):**
+- P3O reinforcement learning algorithm
+- Hyperparameter optimization (random search with ClearML)
+- Reward function configuration (AWS DeepRacer style)
+- ML interface for backend integration
+- Real-time training metrics
+
+**Jay's Role (UI/Frontend/Database):**
+- AWS DeepRacer-style UI
+- Backend API and database
+- Real-time training dashboard
+- Hyperparameter control interface
+- Student session management
+
+**Uma's Role (Simulation/CAD/ROS):**
+- Gazebo simulation environment
+- 5-hoop course CAD and physics
+- PX4-ROS-COM integration
+- Camera simulation (ZED Mini)
+- ROS message handling
+
+## Integration Guides
+
+### For Jay (Backend/UI Developer)
+**📋 See: `api/JAY_INTEGRATION_GUIDE.md`**
+
+Key integration points:
+- `api/ml_interface.py` - Main ML interface class
+- `rl_agent/config.py` - Default hyperparameters for UI
+- `rl_agent/algorithms/p3o.py` - Student-tunable parameters
+- `api/neon_database_schema.sql` - Database schema
+- Real-time metrics from ClearML
+
+### For Uma (Simulation/ROS Developer)  
+**📋 See: `UMA_INTEGRATION_GUIDE.md`**
+
+Key integration points:
+- `msg/` directory - ROS message definitions
+- `nodes/` directory - ROS node interfaces
+- `rl_agent/config.py` - Course layout and dimensions
+- PX4-ROS-COM topics and message flow
+- Camera and sensor simulation requirements
+
+## Quick Reference
+
+### System Architecture
+```
+Students ─► Jay's UI ─► My ML Interface ─► RL Training
+                           │
+                           ▼
+Uma's Simulation ◄─── ROS Topics ◄─── My RL Agent
+```
+
+### Core Configuration (All Teams Need This)
+**File:** `rl_agent/config.py`
+
+- Course dimensions: 2.1m x 1.6m x 1.5m
+- 5 hoops, 0.8m diameter, 0.8m altitude
+- P3O algorithm with student-tunable hyperparameters
+- Training time: 10-180 minutes (student must specify)
+- YOLO11 + ZED Mini for vision
+
+## Key Files Summary
+
+### For Integration (All Teams)
+```
+rl_agent/config.py          # Main configuration
+msg/DroneState.msg          # Drone state definition  
+msg/VisionFeatures.msg      # Vision processing output
+msg/CourseState.msg         # Course/episode management
+```
+
+### For Jay (Backend/UI)
+```
+api/ml_interface.py         # Main integration interface
+api/neon_database_schema.sql # Database schema
+rl_agent/algorithms/p3o.py  # Hyperparameter definitions
+rl_agent/rewards/rewards.py # DeepRacer-style reward function
+```
+
+### For Uma (Simulation/ROS)
+```
+nodes/rl_agent_node.py      # RL agent ROS2 node
+nodes/px4_interface_node.py # PX4-ROS-COM interface
+rl_agent/mvp_trajectory.py  # Flight phases
+nodes/vision_processor_node.py # YOLO11 processing
+```
+
+---
 
 ## Introduction to DeepFlyer
 
@@ -24,20 +100,21 @@ DeepFlyer is an educational reinforcement learning (RL) platform for drones, des
 - Collecting and processing sensor data from cameras and flight controllers
 - Implementing and testing various reward functions for different tasks
 - Enforcing safety constraints to prevent damage to drones
-- Supporting users from beginner to advanced skill levels
+- Supporting educational reinforcement learning experiences
 
 What sets DeepFlyer apart is its flexible architecture that works in three modes:
 1. **Full hardware mode**: Connects to actual drones with MAVROS and real sensors
 2. **Simulation mode**: Works with Gazebo or other simulators through ROS
 3. **Mock mode**: Functions without any ROS installation, using simulated data
 
-### The Explorer and Researcher Paradigm
+### Educational Platform Design
 
-DeepFlyer implements two distinct user experience levels:
+DeepFlyer provides an intuitive learning environment that allows students to:
 
-- **Explorer Mode**: Designed for beginners (ages 11-22) with simplified interfaces, restricted flight envelopes, and strong safety constraints. Perfect for educational settings.
-  
-- **Researcher Mode**: Aimed at advanced users with full feature access, customizable parameters, and flexible constraints. Ideal for university research and development.
+- Experiment with reward function parameters to see how they affect drone behavior
+- Visualize the learning process in real-time
+- Understand reinforcement learning concepts through hands-on experimentation
+- Progress from basic concepts to advanced RL techniques
 
 ## System Architecture
 
@@ -55,8 +132,8 @@ DeepFlyer follows a modular architecture built around ROS (Robot Operating Syste
   │                   │  │                 │  │  Hardware     │
   │ - P3O algorithm    │  │ - RosEnv       │  │               │
   │ - Custom agents   │  │ - MAVROSEnv    │  │ - Gazebo      │
-  │                   │  │ - Explorer     │  │ - Real Drone   │
-  └────────┬──────────┘  │ - Researcher   │  │ - Mock System │
+  │                   │  │ - Educational  │  │ - Real Drone   │
+  └────────┬──────────┘  │   Interface    │  │ - Mock System │
            │             └────────┬────────┘  └───────┬──────┘
            │                      │                   │
            ▼                      ▼                   ▼
@@ -131,7 +208,7 @@ This specialized environment extends `RosEnv` to work specifically with PX4 flig
 - Integrates with the safety layer
 - Connects with the reward system
 - Provides utility methods for arming, mode changes, etc.
-- Comes in Explorer and Researcher variants
+- Includes configurable safety parameters for educational use
 
 Key methods include:
 
@@ -374,10 +451,10 @@ This scenario uses Gazebo with PX4 Software-In-The-Loop (SITL):
 3. **Create and use the environment**:
    ```python
    import numpy as np
-   from rl_agent.env.mavros_env import MAVROSExplorerEnv
+   from rl_agent.env.mavros_env import MAVROSEnv
    
    # Create environment with default settings
-   env = MAVROSExplorerEnv()
+   env = MAVROSEnv()
    
    # Reset the environment
    obs, info = env.reset()
@@ -418,11 +495,11 @@ For a real drone with Pixhawk and ZED Mini:
 3. **Create and use the environment with safety emphasis**:
    ```python
    import numpy as np
-   from rl_agent.env.mavros_env import MAVROSExplorerEnv
+   from rl_agent.env.mavros_env import MAVROSEnv
    import time
    
    # Create environment with cautious settings
-   env = MAVROSExplorerEnv(
+   env = MAVROSEnv(
        auto_arm=False,            # Don't arm automatically
        auto_offboard=False,       # Don't set OFFBOARD automatically
        step_duration=0.1,         # Slower control (10Hz)
@@ -494,12 +571,12 @@ For development on systems without ROS:
 
 ```python
 import numpy as np
-from rl_agent.env.mavros_env import MAVROSResearcherEnv
+from rl_agent.env.mavros_env import MAVROSEnv
 import matplotlib.pyplot as plt
 
-# Create environment with researcher settings
+# Create environment with advanced settings
 # Will automatically use mock implementation
-env = MAVROSResearcherEnv(
+env = MAVROSEnv(
     with_noise=True,           # Add noise to observations
     noise_level=0.02,          # 2% noise
 )
@@ -657,11 +734,8 @@ env = MAVROSEnv(safety_boundaries=safety_boundaries)
 This tests the core environment functionality:
 
 ```bash
-# Test Explorer mode environment
-python scripts/test_mavros_env.py --mode explorer
-
-# Test Researcher mode environment
-python scripts/test_mavros_env.py --mode researcher
+# Test MAVROS environment
+python scripts/test_mavros_env.py
 
 # Test MAVROS-specific functions
 python scripts/test_mavros_env.py --mode mavros
@@ -882,7 +956,7 @@ env.close()
 
 ```python
 import numpy as np
-from rl_agent.env.mavros_env import MAVROSResearcherEnv
+from rl_agent.env.mavros_env import MAVROSEnv
 from rl_agent.rewards import create_cross_track_and_heading_reward
 
 # Create a custom two-term reward function
@@ -895,7 +969,7 @@ reward_fn = create_cross_track_and_heading_reward(
 )
 
 # Create environment with custom reward function
-env = MAVROSResearcherEnv(
+env = MAVROSEnv(
     reward_function=reward_fn,
     goal_position=trajectory[-1],  # Last point in trajectory
 )

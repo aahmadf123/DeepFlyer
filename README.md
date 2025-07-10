@@ -11,7 +11,7 @@ DeepFlyer implements **direct reinforcement learning control** for drones using 
 - **Direct RL Control**: P3O algorithm outputs control commands directly (thrust, roll rate, pitch rate, yaw rate)
 - **PX4-ROS-COM Integration**: Lower latency communication with PX4 flight controllers
 - **ZED Camera Integration**: Real-time visual perception for navigation
-- **Educational Focus**: Two modes - Explorer (beginner-friendly) and Researcher (full control)
+- **Educational Focus**: Intuitive interface for learning reinforcement learning concepts
 - **Safety Layer**: Prevents dangerous actions while maintaining learning flexibility
 - **Sim-to-Real**: Train in simulation, deploy on real hardware
 
@@ -37,8 +37,7 @@ All core components are implemented with production-ready code:
 - **MessageConverter** - Coordinate transformations and message utilities
 
 ### 4. **Production Environment Classes** (`rl_agent/env/px4_base_env.py`)
-- **PX4ExplorerEnv** - Enhanced safety for beginners
-- **PX4ResearcherEnv** - Full control for advanced users
+- **PX4DroneEnv** - Main environment class for drone control
 - **PX4BaseEnv** - Common functionality base class
 
 ### 5. **P3O Algorithm** (`rl_agent/algorithms/p3o.py`)
@@ -82,12 +81,12 @@ source install/setup.bash
 
 ## Quick Start
 
-### Create Explorer Environment (Recommended for Beginners)
+### Create Training Environment
 ```python
-from rl_agent.env import make_px4_explorer_env
+from rl_agent.env import make_px4_env
 
-# Create environment with enhanced safety
-env = make_px4_explorer_env(
+# Create environment
+env = make_px4_env(
     use_zed=True,  # Enable camera
     spawn_position=(0.0, 0.0, 1.0)
 )
@@ -170,7 +169,7 @@ agent.train(total_timesteps=100000)
 
 - `rl_agent/`: Reinforcement learning algorithms and models
   - `algorithms/p3o.py`: P3O implementation for direct drone control
-  - `env/px4_base_env.py`: Environment implementations for Explorer/Researcher modes
+  - `env/px4_base_env.py`: Environment implementation for drone control
   - `env/zed_integration.py`: ZED camera interface
   - `env/px4_comm/`: PX4 communication utilities
 - `nodes/`: Standalone ROS2 nodes for vision processing and reward calculation
@@ -179,17 +178,13 @@ agent.train(total_timesteps=100000)
 
 ## Safety Features
 
-### Explorer Mode (Beginner-Friendly)
-- **Speed limits**: Reduced maximum velocities
+The platform includes comprehensive safety features:
+
+- **Speed limits**: Configurable maximum velocities
 - **Boundary enforcement**: Geographic flight area restrictions
 - **Emergency landing**: Automatic safety responses
-- **Gentle control**: Smooth action filtering
-
-### Researcher Mode (Full Control)
-- **Full speed access**: Maximum performance capabilities
-- **Advanced maneuvers**: Complex flight patterns
-- **Minimal safety constraints**: Research flexibility
-- **Direct PX4 control**: Low-level command access
+- **Collision avoidance**: Obstacle detection and avoidance
+- **Action filtering**: Smooth control command processing
 
 ## Contributing
 

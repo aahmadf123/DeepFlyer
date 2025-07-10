@@ -18,7 +18,7 @@
 DeepFlyer is an educational drone platform that teaches reinforcement learning concepts through autonomous drone navigation. Inspired by AWS DeepRacer, students learn RL by training drones to navigate obstacle courses without needing to write code.
 
 ### Key Features
-- **No Coding Required**: Students modify reward functions through simple parameter adjustments
+- **Direct Code Editing**: Students modify reward functions by editing Python code like AWS DeepRacer
 - **Sim-to-Real**: Train in simulation, deploy on real hardware
 - **Safe Learning Environment**: Constrained lab space with safety boundaries
 - **Visual Learning**: Watch drones learn to navigate in real-time

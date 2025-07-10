@@ -4,9 +4,34 @@
 **Algorithm**: P3O (Procrastinated Policy Optimization)  
 **Hardware**: Holybro S500 + Pixhawk 6C + Pi 4B + ZED Mini + Emergency stop
 
-## Overview
+## Team Responsibilities
 
-I'm handling the entire RL/AI/Vision pipeline - from raw camera input to trained flight policies. This includes computer vision processing, state representation, reward engineering, P3O training, and all the intelligent decision-making that makes the drone learn to navigate autonomously.
+### My Role (RL/ML Developer)
+- P3O reinforcement learning algorithm
+- Hyperparameter optimization (random search with ClearML)  
+- Reward function configuration (AWS DeepRacer style)
+- ML interface for backend integration
+- Real-time training metrics from computer vision to flight decisions
+
+### Jay's Role (UI/Frontend/Database)
+- AWS DeepRacer-style UI (exactly like DeepRacer, not different)
+- Backend API and database integration
+- Real-time training dashboard showing live metrics
+- Hyperparameter control interface for students
+- Student session management and progress tracking
+
+### Uma's Role (Simulation/CAD/ROS)
+- Gazebo simulation environment with physics
+- 5-hoop course CAD design and physics setup
+- PX4-ROS-COM integration and message handling
+- Camera simulation (ZED Mini) for computer vision
+- ROS topic publishing/subscribing for system integration
+
+**Integration:** Uma provides simulation → My ML system learns to fly → Jay's UI shows students what's happening
+
+## My Implementation Overview
+
+I handle the complete RL/AI/Vision pipeline - from raw camera input to trained flight policies. This includes computer vision processing, state representation, reward engineering, P3O training, and all the intelligent decision-making that makes the drone learn to navigate autonomously.
 
 ## ROS2 Topics Reference
 
@@ -423,4 +448,4 @@ graph TD
 - **Real-time Feedback**: 50ms control loop with continuous reward calculation
 - **Scalability**: Additional nodes can be added without disrupting core pipeline
 
-**Key Innovation**: Students tune reward parameters, watch AI learn - no coding required 
+**Key Innovation**: Students directly edit reward function code like AWS DeepRacer, watch AI learn from their code changes 

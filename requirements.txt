@@ -43,7 +43,18 @@ pytest>=6.0.0
 # black>=23.0.0
 # flake8>=6.0.0
 
+# Backend API & Database (For Jay)
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.4.0
+python-multipart>=0.0.6
+
+# Neon Database Integration
+asyncpg>=0.28.0
+psycopg2-binary>=2.9.7
+apscheduler>=3.10.0
+
 # Notes for teammates:
-# - Jay: Add your backend API dependencies (FastAPI, etc.)
+# - Jay: Database dependencies added above
 # - Uma: Add deployment dependencies (Docker, etc.)
 # - ZED SDK: Install manually if using real hardware 
