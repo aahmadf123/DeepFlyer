@@ -1,12 +1,12 @@
 """
-Depth Processing for MVP Hoop Navigation
+Depth Processing for Hoop Navigation
 
 This module handles:
 1. ZED camera depth data processing
 2. YOLO11 hoop detection integration
 3. Hoop center calculation and normalization
 4. Distance estimation and normalization
-5. Integration with MVP observation space
+5. Integration with observation space
 
 Provides the vision components for the 8D observation space:
 - hoop_x_center_norm: [-1, 1] horizontal position in camera frame

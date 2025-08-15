@@ -1,7 +1,7 @@
 """
 P3O (Procrastinated Proximal Policy Optimization) Algorithm
 Enhanced version of PPO with procrastination factor for educational drone RL
-MVP Configuration with student-tunable hyperparameters and random search optimization
+Configuration with student-tunable hyperparameters and random search optimization
 """
 
 import torch
@@ -349,7 +349,7 @@ class HyperparameterOptimizer:
         logger.info(f"Optimization results saved to {filepath}")
 
 
-class MVPTrainingConfig:
+class TrainingConfig:
     """Training configuration for MVP with student-configurable training time"""
     
     def __init__(self):
@@ -433,11 +433,11 @@ def create_default_p3o_config() -> P3OConfig:
     return P3OConfig()
 
 
-def create_mvp_training_config(train_time_minutes: int) -> MVPTrainingConfig:
+def create_mvp_training_config(train_time_minutes: int) -> TrainingConfig:
     """Create MVP training configuration with required training time"""
     if train_time_minutes is None:
         raise ValueError("Training time is required. Students must specify training duration (10-180 minutes).")
-    config = MVPTrainingConfig()
+    config = TrainingConfig()
     config.set_training_time(train_time_minutes)
     return config
 

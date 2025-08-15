@@ -11,10 +11,10 @@ import numpy as np
 from enum import Enum
 from typing import Dict, Any, Callable, Optional, Union
 
-# MVP Hoop Navigation Reward Functions
+# Hoop Navigation Reward Functions
 
-class MVPRewardComponentType(Enum):
-    """MVP reward component types for hoop navigation task."""
+class RewardComponentType(Enum):
+    """Reward component types for hoop navigation task."""
     HOOP_DETECTED = "hoop_detected"
     HORIZONTAL_ALIGN = "horizontal_align"
     VERTICAL_ALIGN = "vertical_align"
@@ -26,8 +26,8 @@ class MVPRewardComponentType(Enum):
     DRIFT_LOST_PENALTY = "drift_lost_penalty"
     TIME_PENALTY = "time_penalty"
 
-class MVPRewardConfig:
-    """Configuration for MVP reward function with student-tunable ranges."""
+class HoopRewardConfig:
+    """Configuration for hoop navigation reward function with student-tunable ranges."""
     
     def __init__(self):
         # Positive Rewards (Student Tunable)
@@ -71,7 +71,7 @@ class MVPRewardConfig:
         self.drift_lost_penalty = np.clip(self.drift_lost_penalty, -25.0, -5.0)
         self.time_penalty = np.clip(self.time_penalty, -2.0, -0.5)
 
-def mvp_hoop_detected_reward(
+def hoop_detected_reward(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -80,13 +80,13 @@ def mvp_hoop_detected_reward(
 ) -> float:
     """Reward for detecting a hoop in the camera frame."""
     hoop_visible = state.get("hoop_visible", 0)
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     
     if hoop_visible > 0:
         return config.hoop_detected_reward
     return 0.0
 
-def mvp_horizontal_align_reward(
+def horizontal_align_reward(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -96,13 +96,13 @@ def mvp_horizontal_align_reward(
     """Reward for horizontally aligning with hoop center."""
     hoop_x_center = state.get("hoop_x_center_norm", 0.0)
     hoop_visible = state.get("hoop_visible", 0)
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     
     if hoop_visible > 0 and abs(hoop_x_center) < config.alignment_threshold:
         return config.horizontal_align_reward
     return 0.0
 
-def mvp_vertical_align_reward(
+def vertical_align_reward(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -112,13 +112,13 @@ def mvp_vertical_align_reward(
     """Reward for vertically aligning with hoop center."""
     hoop_y_center = state.get("hoop_y_center_norm", 0.0)
     hoop_visible = state.get("hoop_visible", 0)
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     
     if hoop_visible > 0 and abs(hoop_y_center) < config.alignment_threshold:
         return config.vertical_align_reward
     return 0.0
 
-def mvp_depth_closer_reward(
+def depth_closer_reward(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -128,7 +128,7 @@ def mvp_depth_closer_reward(
     """Reward for approaching the hoop (depth decreasing)."""
     hoop_distance = state.get("hoop_distance_norm", 1.0)
     hoop_visible = state.get("hoop_visible", 0)
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     
     # Store previous distance for comparison
     prev_distance = parameters.get("prev_hoop_distance", 1.0)
@@ -140,7 +140,7 @@ def mvp_depth_closer_reward(
         return config.depth_closer_reward * improvement * 5.0  # Scale factor
     return 0.0
 
-def mvp_hoop_passage_reward(
+def hoop_passage_reward(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -151,7 +151,7 @@ def mvp_hoop_passage_reward(
     hoop_distance = state.get("hoop_distance_norm", 1.0)
     hoop_visible = state.get("hoop_visible", 0)
     passage_detected = info.get("hoop_passage_detected", False) if info else False
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     
     # Check if drone just passed through hoop (distance very close + aligned)
     hoop_x_center = state.get("hoop_x_center_norm", 0.0)
@@ -166,7 +166,7 @@ def mvp_hoop_passage_reward(
         return config.hoop_passage_reward
     return 0.0
 
-def mvp_roundtrip_finish_reward(
+def roundtrip_finish_reward(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -176,13 +176,13 @@ def mvp_roundtrip_finish_reward(
     """Reward for completing the full roundtrip (both passages + landing)."""
     passages = parameters.get("hoop_passages", 0)
     landed_at_origin = info.get("landed_at_origin", False) if info else False
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     
     if passages >= 2 and landed_at_origin:
         return config.roundtrip_finish_reward
     return 0.0
 
-def mvp_collision_penalty(
+def collision_penalty(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -191,13 +191,13 @@ def mvp_collision_penalty(
 ) -> float:
     """Penalty for collision with objects or walls."""
     collision = state.get("collision", False) or (info.get("collision", False) if info else False)
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     
     if collision:
         return config.collision_penalty
     return 0.0
 
-def mvp_missed_hoop_penalty(
+def missed_hoop_penalty(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -208,7 +208,7 @@ def mvp_missed_hoop_penalty(
     hoop_distance = state.get("hoop_distance_norm", 1.0)
     hoop_x_center = state.get("hoop_x_center_norm", 0.0)
     hoop_y_center = state.get("hoop_y_center_norm", 0.0)
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     
     # Check if drone passed close to hoop but not aligned (missed)
     close_to_hoop = hoop_distance < config.passage_threshold * 1.5
@@ -222,7 +222,7 @@ def mvp_missed_hoop_penalty(
         return config.missed_hoop_penalty
     return 0.0
 
-def mvp_drift_lost_penalty(
+def drift_lost_penalty(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -233,14 +233,14 @@ def mvp_drift_lost_penalty(
     hoop_visible = state.get("hoop_visible", 0)
     prev_visible = parameters.get("prev_hoop_visible", 0)
     parameters["prev_hoop_visible"] = hoop_visible
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     
     # Penalty if hoop was visible but now lost
     if prev_visible > 0 and hoop_visible == 0:
         return config.drift_lost_penalty
     return 0.0
 
-def mvp_time_penalty(
+def time_penalty(
     state: Dict[str, Any], 
     action: Dict[str, Any],
     next_state: Optional[Dict[str, Any]] = None,
@@ -248,28 +248,28 @@ def mvp_time_penalty(
     info: Optional[Dict[str, Any]] = None
 ) -> float:
     """Time penalty per timestep to encourage efficiency."""
-    config = parameters.get("config", MVPRewardConfig())
+    config = parameters.get("config", HoopRewardConfig())
     return config.time_penalty
 
-class MVPRewardFunction:
-    """Complete MVP reward function combining all components."""
+class HoopRewardFunction:
+    """Complete hoop navigation reward function combining all components."""
     
-    def __init__(self, config: Optional[MVPRewardConfig] = None):
-        self.config = config or MVPRewardConfig()
+    def __init__(self, config: Optional[HoopRewardConfig] = None):
+        self.config = config or HoopRewardConfig()
         self.config.validate_ranges()
         
         # Component functions
         self.components = {
-            MVPRewardComponentType.HOOP_DETECTED: mvp_hoop_detected_reward,
-            MVPRewardComponentType.HORIZONTAL_ALIGN: mvp_horizontal_align_reward,
-            MVPRewardComponentType.VERTICAL_ALIGN: mvp_vertical_align_reward,
-            MVPRewardComponentType.DEPTH_CLOSER: mvp_depth_closer_reward,
-            MVPRewardComponentType.HOOP_PASSAGE: mvp_hoop_passage_reward,
-            MVPRewardComponentType.ROUNDTRIP_FINISH: mvp_roundtrip_finish_reward,
-            MVPRewardComponentType.COLLISION_PENALTY: mvp_collision_penalty,
-            MVPRewardComponentType.MISSED_HOOP_PENALTY: mvp_missed_hoop_penalty,
-            MVPRewardComponentType.DRIFT_LOST_PENALTY: mvp_drift_lost_penalty,
-            MVPRewardComponentType.TIME_PENALTY: mvp_time_penalty,
+            RewardComponentType.HOOP_DETECTED: hoop_detected_reward,
+            RewardComponentType.HORIZONTAL_ALIGN: horizontal_align_reward,
+            RewardComponentType.VERTICAL_ALIGN: vertical_align_reward,
+            RewardComponentType.DEPTH_CLOSER: depth_closer_reward,
+            RewardComponentType.HOOP_PASSAGE: hoop_passage_reward,
+            RewardComponentType.ROUNDTRIP_FINISH: roundtrip_finish_reward,
+            RewardComponentType.COLLISION_PENALTY: collision_penalty,
+            RewardComponentType.MISSED_HOOP_PENALTY: missed_hoop_penalty,
+            RewardComponentType.DRIFT_LOST_PENALTY: drift_lost_penalty,
+            RewardComponentType.TIME_PENALTY: time_penalty,
         }
         
         # Persistent parameters across timesteps
@@ -475,12 +475,12 @@ def create_cross_track_and_heading_reward(cross_track_weight=1.0, heading_weight
     )
     return reward_fn
 
-def create_mvp_hoop_reward(config_dict: Optional[Dict[str, float]] = None) -> MVPRewardFunction:
-    """Create MVP hoop navigation reward function."""
-    config = MVPRewardConfig()
+def create_hoop_reward(config_dict: Optional[Dict[str, float]] = None) -> HoopRewardFunction:
+    """Create hoop navigation reward function."""
+    config = HoopRewardConfig()
     if config_dict:
         config.update_from_dict(config_dict)
-    return MVPRewardFunction(config)
+    return HoopRewardFunction(config)
 
 def register_reward(name: str, reward_fn: Callable) -> None:
     REGISTRY[name] = {
@@ -492,16 +492,16 @@ def register_reward(name: str, reward_fn: Callable) -> None:
 register_reward("follow_trajectory", follow_trajectory_reward)
 register_reward("heading_error", heading_error_reward)
 
-# Register MVP reward
-register_reward("mvp_hoop_navigation", create_mvp_hoop_reward)
+# Register hoop navigation reward
+register_reward("hoop_navigation", create_hoop_reward)
 
 # User Reward Function
 
 def reward_function(params):
     """
-    DeepFlyer MVP Reward Function - Student Edition
+    DeepFlyer Reward Function - Student Edition
     
-    This is where YOU design your drone's behavior!
+    This is where YOU design your drone behavior!
     Modify the values and logic below to train your drone to:
     1. Take off from Point A
     2. Scan 360 degrees to find the hoop
@@ -511,7 +511,7 @@ def reward_function(params):
     
     Just like AWS DeepRacer, but for autonomous drones!
     
-    Input Parameters (what your drone can "see"):
+    Input Parameters (what your drone can see):
     - hoop_x_center_norm: Horizontal position of hoop center (-1.0 = left, +1.0 = right)
     - hoop_y_center_norm: Vertical position of hoop center (-1.0 = down, +1.0 = up)  
     - hoop_visible: Is the hoop visible? (0 = no, 1 = yes)

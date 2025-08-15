@@ -21,13 +21,13 @@ import logging
 
 # RL agent imports
 from rl_agent.config import DeepFlyerConfig
-from rl_agent.rewards import MVPRewardFunction, MVPRewardConfig
+from rl_agent.rewards import HoopRewardFunction, HoopRewardConfig
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class MVPTrajectoryConfig:
+class TrajectoryConfig:
     """Configuration for MVP trajectory execution"""
     
     # Takeoff parameters
@@ -68,12 +68,12 @@ class MVPTrajectoryConfig:
         }
 
 
-class MVPPhaseController:
+class PhaseController:
     """Controller for managing MVP flight phases"""
     
-    def __init__(self, config: MVPTrajectoryConfig):
+    def __init__(self, config: TrajectoryConfig):
         self.config = config
-        self.phase = MVPFlightPhase.TAKEOFF
+        self.phase = FlightPhase.TAKEOFF
         self.phase_start_time = time.time()
         self.flight_start_time = time.time()
         
@@ -86,7 +86,7 @@ class MVPPhaseController:
         
         logger.info("MVP Phase Controller initialized")
     
-    def update_phase(self, observation: np.ndarray, drone_state: Dict[str, Any]) -> MVPFlightPhase:
+    def update_phase(self, observation: np.ndarray, drone_state: Dict[str, Any]) -> FlightPhase:
         """
         Update current flight phase based on observation and drone state
         
@@ -105,7 +105,7 @@ class MVPPhaseController:
         # Safety check - emergency landing if flight too long
         if flight_duration > self.config.max_flight_time:
             logger.warning("Maximum flight time exceeded, emergency landing")
-            self._transition_to_phase(MVPFlightPhase.LANDING)
+            self._transition_to_phase(FlightPhase.LANDING)
             return self.phase
         
         # Extract observation components
@@ -120,62 +120,62 @@ class MVPPhaseController:
         yaw = drone_state.get('yaw', 0.0)
         
         # Phase transition logic
-        if self.phase == MVPFlightPhase.TAKEOFF:
+        if self.phase == FlightPhase.TAKEOFF:
             if altitude >= self.config.takeoff_altitude - 0.2:
                 self.scan_start_yaw = yaw
-                self._transition_to_phase(MVPFlightPhase.SCAN_360)
+                self._transition_to_phase(FlightPhase.SCAN_360)
                 logger.info(f"Takeoff complete at {altitude:.1f}m, starting 360° scan")
         
-        elif self.phase == MVPFlightPhase.SCAN_360:
+        elif self.phase == FlightPhase.SCAN_360:
             # Check if we've completed a full rotation
             yaw_progress = abs(yaw - self.scan_start_yaw)
             if yaw_progress >= 2 * np.pi * 0.95:  # 95% of full rotation
                 if self.detected_hoops:
                     self.target_hoop = self.detected_hoops[0]  # Choose first detected hoop
-                    self._transition_to_phase(MVPFlightPhase.NAVIGATE_TO_HOOP)
+                    self._transition_to_phase(FlightPhase.NAVIGATE_TO_HOOP)
                     logger.info(f"Scan complete, found {len(self.detected_hoops)} hoop(s)")
                 else:
                     # Continue scanning if no hoops found
                     logger.warning("No hoops detected, continuing scan...")
         
-        elif self.phase == MVPFlightPhase.NAVIGATE_TO_HOOP:
+        elif self.phase == FlightPhase.NAVIGATE_TO_HOOP:
             if hoop_visible and hoop_distance_norm < self.config.passage_distance + 0.2:
-                self._transition_to_phase(MVPFlightPhase.THROUGH_HOOP_FIRST)
+                self._transition_to_phase(FlightPhase.THROUGH_HOOP_FIRST)
                 logger.info("Approaching hoop for first passage")
         
-        elif self.phase == MVPFlightPhase.THROUGH_HOOP_FIRST:
+        elif self.phase == FlightPhase.THROUGH_HOOP_FIRST:
             if self._check_hoop_passage(observation):
                 self.hoop_passages += 1
-                self._transition_to_phase(MVPFlightPhase.RETURN_TO_HOOP)
+                self._transition_to_phase(FlightPhase.RETURN_TO_HOOP)
                 logger.info("First hoop passage complete!")
         
-        elif self.phase == MVPFlightPhase.RETURN_TO_HOOP:
+        elif self.phase == FlightPhase.RETURN_TO_HOOP:
             if hoop_visible and hoop_distance_norm < self.config.passage_distance + 0.2:
-                self._transition_to_phase(MVPFlightPhase.THROUGH_HOOP_SECOND)
+                self._transition_to_phase(FlightPhase.THROUGH_HOOP_SECOND)
                 logger.info("Approaching hoop for return passage")
         
-        elif self.phase == MVPFlightPhase.THROUGH_HOOP_SECOND:
+        elif self.phase == FlightPhase.THROUGH_HOOP_SECOND:
             if self._check_hoop_passage(observation):
                 self.hoop_passages += 1
-                self._transition_to_phase(MVPFlightPhase.RETURN_TO_ORIGIN)
+                self._transition_to_phase(FlightPhase.RETURN_TO_ORIGIN)
                 logger.info("Second hoop passage complete! Returning to origin")
         
-        elif self.phase == MVPFlightPhase.RETURN_TO_ORIGIN:
+        elif self.phase == FlightPhase.RETURN_TO_ORIGIN:
             # Check distance to spawn point (Point A)
             spawn_position = drone_state.get('spawn_position', np.zeros(3))
             distance_to_origin = np.linalg.norm(position - spawn_position)
             if distance_to_origin < 1.0:  # Within 1 meter of origin
-                self._transition_to_phase(MVPFlightPhase.LANDING)
+                self._transition_to_phase(FlightPhase.LANDING)
                 logger.info("Arrived at origin, starting landing")
         
-        elif self.phase == MVPFlightPhase.LANDING:
+        elif self.phase == FlightPhase.LANDING:
             if altitude < self.config.landing_threshold:
-                self._transition_to_phase(MVPFlightPhase.COMPLETED)
+                self._transition_to_phase(FlightPhase.COMPLETED)
                 logger.info("Landing complete! MVP trajectory finished")
         
         return self.phase
     
-    def _transition_to_phase(self, new_phase: MVPFlightPhase) -> None:
+    def _transition_to_phase(self, new_phase: FlightPhase) -> None:
         """Transition to a new flight phase"""
         self.phase = new_phase
         self.phase_start_time = time.time()
@@ -225,13 +225,13 @@ class MVPPhaseController:
         }
 
 
-class MVPActionGenerator:
+class ActionGenerator:
     """Generates actions for each phase of the MVP trajectory"""
     
-    def __init__(self, config: MVPTrajectoryConfig):
+    def __init__(self, config: TrajectoryConfig):
         self.config = config
     
-    def generate_action(self, phase: MVPFlightPhase, observation: np.ndarray, 
+    def generate_action(self, phase: FlightPhase, observation: np.ndarray, 
                        drone_state: Dict[str, Any]) -> np.ndarray:
         """
         Generate action for current phase
@@ -244,21 +244,21 @@ class MVPActionGenerator:
         Returns:
             4D action vector [vx_cmd, vy_cmd, vz_cmd, yaw_rate_cmd]
         """
-        if phase == MVPFlightPhase.TAKEOFF:
+        if phase == FlightPhase.TAKEOFF:
             return self._takeoff_action(observation, drone_state)
-        elif phase == MVPFlightPhase.SCAN_360:
+        elif phase == FlightPhase.SCAN_360:
             return self._scan_action(observation, drone_state)
-        elif phase == MVPFlightPhase.NAVIGATE_TO_HOOP:
+        elif phase == FlightPhase.NAVIGATE_TO_HOOP:
             return self._navigate_action(observation, drone_state)
-        elif phase == MVPFlightPhase.THROUGH_HOOP_FIRST:
+        elif phase == FlightPhase.THROUGH_HOOP_FIRST:
             return self._passage_action(observation, drone_state, forward=True)
-        elif phase == MVPFlightPhase.RETURN_TO_HOOP:
+        elif phase == FlightPhase.RETURN_TO_HOOP:
             return self._return_action(observation, drone_state)
-        elif phase == MVPFlightPhase.THROUGH_HOOP_SECOND:
+        elif phase == FlightPhase.THROUGH_HOOP_SECOND:
             return self._passage_action(observation, drone_state, forward=False)
-        elif phase == MVPFlightPhase.RETURN_TO_ORIGIN:
+        elif phase == FlightPhase.RETURN_TO_ORIGIN:
             return self._return_to_origin_action(observation, drone_state)
-        elif phase == MVPFlightPhase.LANDING:
+        elif phase == FlightPhase.LANDING:
             return self._landing_action(observation, drone_state)
         else:
             return np.zeros(4)  # COMPLETED or unknown phase

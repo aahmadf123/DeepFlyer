@@ -42,11 +42,11 @@ from geometry_msgs.msg import Point
 # Custom message imports
 from deepflyer_msgs.msg import RLAction, CourseState
 
-# Import MVP trajectory components
+# Import trajectory components
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rl_agent.mvp_trajectory import MVPFlightPhase
+from rl_agent.trajectory import FlightPhase
 
 logger = logging.getLogger(__name__)
 

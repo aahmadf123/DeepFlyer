@@ -89,13 +89,13 @@ def generate_launch_description():
         }]
     )
     
-    # MVP trajectory controller (optional)
-    mvp_trajectory_node = Node(
+    # Trajectory controller (optional)
+    trajectory_node = Node(
         package='deepflyer_msgs',
-        executable='mvp_trajectory.py',
-        name='mvp_trajectory_controller',
+        executable='trajectory.py',
+        name='trajectory_controller',
         output='screen',
-        condition=LaunchConfiguration('enable_mvp', default='false')
+        condition=LaunchConfiguration('enable_trajectory', default='false')
     )
     
     return LaunchDescription([
@@ -117,5 +117,5 @@ def generate_launch_description():
         p3o_agent_node,
         reward_calculator_node,
         course_manager_node,
-        mvp_trajectory_node
+        trajectory_node
     ]) 

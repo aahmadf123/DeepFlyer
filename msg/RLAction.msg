@@ -1,5 +1,5 @@
 # RLAction.msg
-# Reinforcement learning action commands for MVP hoop navigation
+# Reinforcement learning action commands for hoop navigation
 # 4D action space: vx, vy, vz, yaw_rate
 
 # Header for timestamp and frame coordination

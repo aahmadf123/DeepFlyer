@@ -1,0 +1,138 @@
+{
+  "p3o_hyperparameters": {
+    "learning_rate": {
+      "default": 0.0003,
+      "min": 0.0001,
+      "max": 0.003,
+      "description": "How fast the agent learns from experience"
+    },
+    "clip_ratio": {
+      "default": 0.2,
+      "min": 0.1,
+      "max": 0.3,
+      "description": "PPO clipping parameter for stable updates"
+    },
+    "entropy_coef": {
+      "default": 0.01,
+      "min": 0.001,
+      "max": 0.1,
+      "description": "Encourages exploration vs exploitation"
+    },
+    "batch_size": {
+      "default": 64,
+      "options": [64, 128, 256],
+      "description": "Number of samples per training update"
+    },
+    "rollout_steps": {
+      "default": 512,
+      "options": [512, 1024, 2048],
+      "description": "Steps to collect before updating"
+    },
+    "num_epochs": {
+      "default": 10,
+      "min": 3,
+      "max": 10,
+      "description": "Training epochs per update"
+    },
+    "gamma": {
+      "default": 0.99,
+      "min": 0.9,
+      "max": 0.99,
+      "description": "Discount factor for future rewards"
+    },
+    "gae_lambda": {
+      "default": 0.95,
+      "min": 0.9,
+      "max": 0.99,
+      "description": "GAE parameter for advantage estimation"
+    }
+  },
+  "reward_parameters": {
+    "hoop_detected_reward": {
+      "default": 1.0,
+      "min": 1.0,
+      "max": 5.0,
+      "description": "Reward for detecting a hoop"
+    },
+    "horizontal_align_reward": {
+      "default": 5.0,
+      "min": 1.0,
+      "max": 10.0,
+      "description": "Reward for horizontal alignment with hoop"
+    },
+    "vertical_align_reward": {
+      "default": 5.0,
+      "min": 1.0,
+      "max": 10.0,
+      "description": "Reward for vertical alignment with hoop"
+    },
+    "depth_closer_reward": {
+      "default": 10.0,
+      "min": 5.0,
+      "max": 20.0,
+      "description": "Reward for approaching the hoop"
+    },
+    "hoop_passage_reward": {
+      "default": 100.0,
+      "min": 50.0,
+      "max": 200.0,
+      "description": "Reward for passing through the hoop"
+    },
+    "roundtrip_finish_reward": {
+      "default": 200.0,
+      "min": 200.0,
+      "max": 300.0,
+      "description": "Reward for completing the full roundtrip"
+    },
+    "collision_penalty": {
+      "default": -25.0,
+      "min": -100.0,
+      "max": -10.0,
+      "description": "Penalty for collisions"
+    },
+    "missed_hoop_penalty": {
+      "default": -25.0,
+      "min": -50.0,
+      "max": -10.0,
+      "description": "Penalty for missing the hoop"
+    },
+    "drift_lost_penalty": {
+      "default": -10.0,
+      "min": -25.0,
+      "max": -5.0,
+      "description": "Penalty for losing sight of hoop"
+    },
+    "time_penalty": {
+      "default": -1.0,
+      "min": -2.0,
+      "max": -0.5,
+      "description": "Per-step time penalty"
+    }
+  },
+  "training_settings": {
+    "max_episodes": {
+      "default": 1000,
+      "min": 100,
+      "max": 10000,
+      "description": "Maximum training episodes"
+    },
+    "max_steps_per_episode": {
+      "default": 500,
+      "min": 100,
+      "max": 2000,
+      "description": "Maximum steps per episode"
+    },
+    "evaluation_frequency": {
+      "default": 50,
+      "min": 10,
+      "max": 100,
+      "description": "Episodes between evaluations"
+    },
+    "model_save_frequency": {
+      "default": 100,
+      "min": 50,
+      "max": 500,
+      "description": "Episodes between model saves"
+    }
+  }
+}

@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 """
-Vision Processor Node for MVP Hoop Navigation
+Vision Processor Node for Hoop Navigation
 
 This ROS2 node integrates:
-- ZED camera RGB and depth data
-- YOLO11 hoop detection
-- 8D observation space generation
-- Real-time vision processing for RL
+- ZED Mini camera RGB, depth, and calibration data
+- YOLO11 hoop detection with confidence filtering
+- 8D observation space generation for RL agent
+- Real-time vision processing with performance monitoring
 
-Subscribes to:
-- /zed_mini/zed_node/rgb/image_rect_color
-- /zed_mini/zed_node/depth/depth_registered
+Subscribes to (ZED ROS2 wrapper topics):
+- /zed_mini/zed_node/rgb/image_rect_color (sensor_msgs/Image) - Rectified RGB
+- /zed_mini/zed_node/depth/depth_registered (sensor_msgs/Image) - Depth in mm
+- /zed_mini/zed_node/rgb/camera_info (sensor_msgs/CameraInfo) - Camera intrinsics
 
 Publishes to:
-- /deepflyer/vision_features
+- /deepflyer/vision_features (deepflyer_msgs/VisionFeatures) - Processed hoop data
 """
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 import cv2
 import numpy as np
 import time
@@ -27,12 +28,12 @@ from typing import Optional, Tuple, Dict, Any
 from cv_bridge import CvBridge
 
 # ROS2 message imports
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import Header
 from geometry_msgs.msg import Point
 
 # Custom message imports
-    from deepflyer_msgs.msg import VisionFeatures
+from deepflyer_msgs.msg import VisionFeatures
 
 # Import our depth processing components
 import sys
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 class VisionProcessorNode(Node):
     """
     ROS2 node for vision processing with YOLO11 + ZED integration
-    Provides real-time hoop detection for MVP trajectory navigation
+    Provides real-time hoop detection for trajectory navigation
     """
     
     def __init__(self):
@@ -80,6 +81,7 @@ class VisionProcessorNode(Node):
         # Vision processing state
         self.latest_rgb_image: Optional[np.ndarray] = None
         self.latest_depth_image: Optional[np.ndarray] = None
+        self.camera_info: Optional[CameraInfo] = None
         self.image_width = 0
         self.image_height = 0
         self.last_detection: Optional[HoopDetection] = None
@@ -90,30 +92,39 @@ class VisionProcessorNode(Node):
         self.processing_times = []
         self.start_time = time.time()
         
-        # QoS profile for reliable image transport
+        # QoS profile matching ZED wrapper (sensor data with BEST_EFFORT reliability)
         image_qos = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
+            reliability=ReliabilityPolicy.BEST_EFFORT,  # Matches ZED wrapper QoS
             history=HistoryPolicy.KEEP_LAST,
-            depth=1
+            depth=5,  # Buffer 5 frames for stable processing
+            durability=DurabilityPolicy.VOLATILE
         )
         
-        # Create subscribers
+        # Create ZED Mini subscribers (official zed-ros2-wrapper topics)
         self.rgb_subscription = self.create_subscription(
             Image,
-            '/zed_mini/zed_node/rgb/image_rect_color',
+            '/zed_mini/zed_node/rgb/image_rect_color',  # Rectified RGB from ZED wrapper
             self.rgb_callback,
             image_qos
         )
         
         self.depth_subscription = self.create_subscription(
             Image,
-            '/zed_mini/zed_node/depth/depth_registered',
+            '/zed_mini/zed_node/depth/depth_registered',  # Registered depth in mm
             self.depth_callback,
             image_qos
         )
         
+        # Camera calibration info (required for accurate depth processing)
+        self.camera_info_subscription = self.create_subscription(
+            CameraInfo,
+            '/zed_mini/zed_node/rgb/camera_info',  # Camera intrinsics from ZED
+            self.camera_info_callback,
+            image_qos
+        )
+        
         # Create publisher
-            self.vision_features_pub = self.create_publisher(
+        self.vision_features_pub = self.create_publisher(
             VisionFeatures,
             '/deepflyer/vision_features',
             10
@@ -157,6 +168,13 @@ class VisionProcessorNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error processing depth image: {e}")
     
+    def camera_info_callback(self, msg: CameraInfo):
+        """
+        Callback for camera calibration info from ZED camera.
+        Stores intrinsic parameters needed for accurate depth-to-3D conversion.
+        """
+        self.camera_info = msg
+    
     def process_vision_frame(self):
         """Main vision processing loop"""
         if self.latest_rgb_image is None or self.latest_depth_image is None:
@@ -178,11 +196,11 @@ class VisionProcessorNode(Node):
             
             # Track performance
             processing_time = time.time() - start_time
-                self.processing_times.append(processing_time)
-                if len(self.processing_times) > 100:
-                    self.processing_times.pop(0)
-                
-                self.frame_count += 1
+            self.processing_times.append(processing_time)
+            if len(self.processing_times) > 100:
+                self.processing_times.pop(0)
+            
+            self.frame_count += 1
         
         except Exception as e:
             self.get_logger().error(f"Error in vision processing: {e}")
@@ -258,8 +276,8 @@ class VisionProcessorNode(Node):
         msg.depth_confidence = 1.0 if hoop_detection.depth_mm > 0 else 0.0
         
         # Additional information
-        msg.hoop_id = 0  # Single hoop in MVP
-        msg.next_hoop_visible = False  # Only one hoop in MVP
+        msg.hoop_id = 0  # Single hoop in current implementation
+        msg.next_hoop_visible = False  # Only one hoop in current implementation
         
         # Update tracking
         self.last_detection = hoop_detection

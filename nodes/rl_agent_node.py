@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-RL Agent Node for MVP Hoop Navigation
+RL Agent Node for Hoop Navigation
 
-This ROS2 node integrates the P3O RL agent with the MVP system, handling:
+This ROS2 node integrates the P3O RL agent with the system, handling:
 - 8D observation space construction from ROS topics
 - P3O action selection and training
 - Episode management and reward calculation
@@ -39,9 +39,10 @@ from deepflyer_msgs.msg import VisionFeatures, CourseState, RLAction, RewardFeed
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rl_agent.algorithms.p3o import P3O, P3OConfig, MVPTrainingConfig
+from rl_agent.algorithms.p3o import P3O, P3OConfig, TrainingConfig
 from rl_agent.algorithms.replay_buffer import ReplayBuffer
-from rl_agent.env.mvp_trajectory import MVPFlightPhase
+from rl_agent.env.trajectory import FlightPhase
+from rl_agent.utils import ClearMLTracker
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,7 @@ class ObservationBuffer:
 
 class RLAgentNode(Node):
     """
-    Main RL agent node for MVP hoop navigation with P3O algorithm
+    Main RL agent node for hoop navigation with P3O algorithm
     """
     
     def __init__(self):
@@ -154,15 +155,21 @@ class RLAgentNode(Node):
         
         # Initialize parameters
         self.declare_parameter('training_mode', True)
-        self.declare_parameter('model_save_path', 'models/mvp_p3o_model.pt')
-        self.declare_parameter('training_config_file', 'config/mvp_training.json')
+        self.declare_parameter('model_save_path', 'models/p3o_model.pt')
+        self.declare_parameter('training_config_file', 'config/training.json')
         self.declare_parameter('action_frequency', 20.0)
+        self.declare_parameter('enable_clearml', False)
+        self.declare_parameter('clearml_project', 'DeepFlyer')
+        self.declare_parameter('clearml_task', 'Hoop Navigation Training')
         
         # Get parameters
         self.training_mode = self.get_parameter('training_mode').get_parameter_value().bool_value
         self.model_save_path = self.get_parameter('model_save_path').get_parameter_value().string_value
         self.training_config_file = self.get_parameter('training_config_file').get_parameter_value().string_value
         self.action_freq = self.get_parameter('action_frequency').get_parameter_value().double_value
+        self.enable_clearml = self.get_parameter('enable_clearml').get_parameter_value().bool_value
+        self.clearml_project = self.get_parameter('clearml_project').get_parameter_value().string_value
+        self.clearml_task = self.get_parameter('clearml_task').get_parameter_value().string_value
         
         # Load configurations
         self.p3o_config = self._load_p3o_config()
@@ -170,8 +177,8 @@ class RLAgentNode(Node):
         
         # Initialize RL components
         self.p3o_agent = P3O(
-            obs_dim=8,  # MVP 8D observation space
-            action_dim=4,  # MVP 4D action space
+            obs_dim=8,  # 8D observation space
+            action_dim=4,  # 4D action space
             config=self.p3o_config,
             device="cpu"  # Use CPU for real-time inference
         )
@@ -208,6 +215,20 @@ class RLAgentNode(Node):
         # Threading for training
         self.training_thread = None
         self.training_active = False
+        
+        # ClearML tracking
+        self.clearml_tracker = None
+        if self.enable_clearml and self.training_mode:
+            try:
+                self.clearml_tracker = ClearMLTracker(
+                    project_name=self.clearml_project,
+                    task_name=self.clearml_task,
+                    tags=['p3o', 'hoop-navigation', 'training']
+                )
+                self.clearml_tracker.log_hyperparameters(self.p3o_config.__dict__)
+                self.get_logger().info('ClearML tracking enabled')
+            except Exception as e:
+                self.get_logger().warn(f'Failed to initialize ClearML: {e}')
         
         # Create subscribers
         self.vision_features_sub = self.create_subscription(
@@ -286,21 +307,21 @@ class RLAgentNode(Node):
             self.get_logger().warn(f"Failed to load P3O config: {e}, using defaults")
             return P3OConfig()
     
-    def _load_training_config(self) -> MVPTrainingConfig:
+    def _load_training_config(self) -> TrainingConfig:
         """Load training configuration"""
         try:
             with open(self.training_config_file, 'r') as f:
                 config_dict = json.load(f)
             
             training_minutes = config_dict.get('training_time_minutes', 60)
-            config = MVPTrainingConfig()
+            config = TrainingConfig()
             config.set_training_time(training_minutes)
             
             return config
             
         except Exception as e:
             self.get_logger().warn(f"Failed to load training config: {e}, using defaults")
-            return MVPTrainingConfig()
+            return TrainingConfig()
     
 
     
@@ -519,6 +540,15 @@ class RLAgentNode(Node):
             f"Success={trajectory_completed}"
         )
         
+        # Log episode to ClearML
+        if self.clearml_tracker:
+            self.clearml_tracker.log_metrics({
+                'episode_reward': self.episode_reward,
+                'episode_steps': self.episode_step,
+                'episode_time': episode_time,
+                'success': float(trajectory_completed)
+            }, self.total_episodes)
+        
         self.episode_count += 1
     
     def _add_episode_to_buffer(self):
@@ -543,11 +573,15 @@ class RLAgentNode(Node):
             metrics = self.p3o_agent.update(self.replay_buffer)
             
             if metrics:
-                self.get_logger().info(
-                    f"Training: Policy Loss={metrics.get('policy_loss', 0):.4f}, "
-                    f"Value Loss={metrics.get('value_loss', 0):.4f}, "
-                    f"Buffer Size={len(self.replay_buffer)}"
-                )
+                            self.get_logger().info(
+                f"Training: Policy Loss={metrics.get('policy_loss', 0):.4f}, "
+                f"Value Loss={metrics.get('value_loss', 0):.4f}, "
+                f"Buffer Size={len(self.replay_buffer)}"
+            )
+            
+            # Log to ClearML
+            if self.clearml_tracker:
+                self.clearml_tracker.log_metrics(metrics, self.total_episodes)
         
         except Exception as e:
             self.get_logger().error(f"Training error: {e}")

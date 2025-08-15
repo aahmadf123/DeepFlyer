@@ -103,17 +103,23 @@ source install/setup.bash
 
 ## Quick Start
 
-### Create Training Environment
+### Launch the System
+```bash
+# Terminal 1: Launch all ML components
+ros2 launch deepflyer mvp_system.launch.py
+
+# Terminal 2: Monitor training progress
+ros2 topic echo /deepflyer/reward_feedback
+```
+
+### Use the Environment in Python
 ```python
-from rl_agent.env import make_px4_env
+# Simple usage - just import and create
+from rl_agent.env import make_env
 
-# Create environment
-env = make_px4_env(
-    use_zed=True,  # Enable camera
-    spawn_position=(0.0, 0.0, 1.0)
-)
-
+env = make_env(enable_safety=True)
 obs, info = env.reset()
+
 for _ in range(1000):
     action = env.action_space.sample()
     obs, reward, terminated, truncated, info = env.step(action)
@@ -121,21 +127,24 @@ for _ in range(1000):
         obs, info = env.reset()
 ```
 
-### Training a Direct Control Agent
+### Training with Hyperparameter Optimization
 
 ```bash
-cd ~/deepflyer_ws
-source install/setup.bash
-python scripts/test_direct_control.py --train --collect_time 300 --save_model ./models/direct_p3o_agent.pt
+# Run hyperparameter search (20 trials)
+python scripts/hyperopt_runner.py --trials 20 --episodes 100
+
+# Use best configuration for training
+ros2 launch deepflyer_msgs deepflyer_ml.launch.py enable_clearml:=true
 ```
 
-### Testing a Trained Agent
+### Student Configuration
 
-```bash
-cd ~/deepflyer_ws
-source install/setup.bash
-python scripts/test_direct_control.py --test --test_time 120 --load_model ./models/direct_p3o_agent.pt
-```
+Students can tune parameters via `config/student_tuning.json`:
+- P3O hyperparameters (learning rate, batch size, etc.)
+- Reward function weights
+- Training settings
+
+The configuration is loaded automatically by the training nodes.
 
 ## Communication Architecture
 
@@ -148,27 +157,19 @@ python scripts/test_direct_control.py --test --test_time 120 --load_model ./mode
 - Traditional MAVROS bridge for backward compatibility
 - Higher latency compared to PX4-ROS-COM
 
-## P3O Algorithm
+## P3O Algorithm [[memory:2773177]]
 
-The project implements the P3O algorithm, an advanced reinforcement learning method specifically designed for drone navigation tasks. Key features include:
+The project uses the P3O (Procrastinated Proximal Policy Optimization) algorithm for reinforcement learning:
 
-- **Procrastinated Updates**: Postpones on-policy updates to improve sample efficiency
-- **Blended Learning**: Combines on-policy and off-policy gradients for better stability
-- **Adaptive Exploration**: Uses entropy regularization to maintain appropriate exploration
+- **Procrastinated Updates**: Improves sample efficiency by delaying policy updates
+- **Random Search Hyperparameter Tuning**: Integrated with ClearML for live tracking
+- **Student-Tunable Parameters**: All key hyperparameters exposed for experimentation
 
-### P3O Configuration
-```python
-from rl_agent.algorithms import P3O, P3OConfig
-
-# Configure P3O
-config = P3OConfig(
-    procrastination_factor=0.1,  # Key P3O parameter
-    learning_rate=3e-4,
-    batch_size=64,
-    n_epochs=10
-)
-
-# Create and train P3O agent
+### Key Features
+- Real-time ClearML integration for monitoring training progress
+- Automatic hyperparameter optimization with random search
+- DeepRacer-style reward function for intuitive tuning [[memory:2771338]]
+- Direct control without intermediate PID controllers
 agent = P3O(env, config)
 agent.train(total_timesteps=100000)
 ```

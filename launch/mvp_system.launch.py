@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-MVP System Launch File
+System Launch File
 
-Launches the complete MVP hoop navigation system with:
+Launches the complete hoop navigation system with:
 - Vision processing (YOLO11 + ZED)
 - PX4 flight control interface  
 - RL agent with P3O algorithm
@@ -13,16 +13,17 @@ For educational drone RL with real-time training capability.
 
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, GroupAction
+from launch.actions import DeclareLaunchArgument, LogInfo, GroupAction, IncludeLaunchDescription
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    """Generate launch description for MVP system"""
+    """Generate launch description for system"""
     
     # Get package directory
     pkg_dir = get_package_share_directory('deepflyer')
@@ -78,6 +79,20 @@ def generate_launch_description():
     yolo_model = LaunchConfiguration('yolo_model')
     takeoff_altitude = LaunchConfiguration('takeoff_altitude')
     control_frequency = LaunchConfiguration('control_frequency')
+    
+    # ZED Mini Camera Launch (official zed-ros2-wrapper)
+    # Automatically starts ZED Mini with camera_model=zedm parameter
+    # Publishes: /zed_mini/zed_node/rgb/image_rect_color, depth/depth_registered, etc.
+    zed_camera_node = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('zed_wrapper'), 
+                'launch', 
+                'zed_camera.launch.py'
+            ])
+        ]),
+        launch_arguments={'camera_model': 'zedm'}.items()
+    )
     
     # Vision Processor Node
     vision_processor_node = Node(
@@ -242,7 +257,7 @@ def generate_launch_description():
         control_frequency_arg,
         
         # System startup message
-        LogInfo(msg="Starting DeepFlyer MVP System..."),
+        LogInfo(msg="Starting DeepFlyer System..."),
         LogInfo(msg=["Training mode: ", training_mode]),
         LogInfo(msg=["Safety enabled: ", enable_safety]),
         LogInfo(msg=["Control frequency: ", control_frequency, " Hz"]),
@@ -268,7 +283,7 @@ def generate_launch_description():
         ], condition=IfCondition(LaunchConfiguration('record_bag', default='false')), scoped=True),
         
         # System ready message
-        LogInfo(msg="MVP System launched successfully!")
+        LogInfo(msg="System launched successfully!")
     ])
 
 
