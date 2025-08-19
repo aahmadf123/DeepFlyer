@@ -37,6 +37,11 @@ class TrajectoryConfig:
     # Scanning parameters
     scan_yaw_rate: float = 0.3         # rad/s (about 17 deg/s)
     scan_hover_time: float = 0.5       # seconds to hover at each detection
+    scan_altitude_min: float = 0.8     # meters - lower bound for scan sweep
+    scan_altitude_max: float = 3.0     # meters - upper bound for scan sweep
+    scan_altitude_rate: float = 0.25   # m/s while sweeping when hoop not visible
+    scan_selection_align_weight: float = 0.7  # weight for vertical alignment in scan score
+    scan_selection_dist_weight: float = 0.3   # weight for distance in scan score
     
     # Navigation parameters
     approach_speed: float = 0.8        # m/s when approaching hoop
@@ -68,6 +73,18 @@ class TrajectoryConfig:
         }
 
 
+class FlightPhase(Enum):
+    TAKEOFF = "TAKEOFF"
+    SCAN_360 = "SCAN_360"
+    NAVIGATE_TO_HOOP = "NAVIGATE_TO_HOOP"
+    THROUGH_HOOP_FIRST = "THROUGH_HOOP_FIRST"
+    RETURN_TO_HOOP = "RETURN_TO_HOOP"
+    THROUGH_HOOP_SECOND = "THROUGH_HOOP_SECOND"
+    RETURN_TO_ORIGIN = "RETURN_TO_ORIGIN"
+    LANDING = "LANDING"
+    COMPLETED = "COMPLETED"
+
+
 class PhaseController:
     """Controller for managing MVP flight phases"""
     
@@ -83,6 +100,11 @@ class PhaseController:
         self.detected_hoops = []
         self.target_hoop = None
         self.hoop_passages = 0
+        # Altitude selection during scan
+        self.best_scan_score: float = -1e9
+        self.best_scan_altitude: Optional[float] = None
+        self.best_scan_yaw: Optional[float] = None
+        self.desired_target_altitude: Optional[float] = None
         
         logger.info("MVP Phase Controller initialized")
     
@@ -127,16 +149,42 @@ class PhaseController:
                 logger.info(f"Takeoff complete at {altitude:.1f}m, starting 360° scan")
         
         elif self.phase == FlightPhase.SCAN_360:
-            # Check if we've completed a full rotation
+            # While scanning, evaluate vertical alignment and distance when hoop is visible
+            if hoop_visible:
+                align_score = 1.0 - min(1.0, abs(hoop_y_norm))
+                dist_score = 1.0 - min(1.0, hoop_distance_norm)
+                score = (
+                    self.config.scan_selection_align_weight * align_score
+                    + self.config.scan_selection_dist_weight * dist_score
+                )
+                if score > self.best_scan_score:
+                    self.best_scan_score = score
+                    self.best_scan_altitude = altitude
+                    self.best_scan_yaw = yaw
+            # Check if we've completed a (nearly) full rotation
             yaw_progress = abs(yaw - self.scan_start_yaw)
             if yaw_progress >= 2 * np.pi * 0.95:  # 95% of full rotation
-                if self.detected_hoops:
-                    self.target_hoop = self.detected_hoops[0]  # Choose first detected hoop
-                    self._transition_to_phase(FlightPhase.NAVIGATE_TO_HOOP)
-                    logger.info(f"Scan complete, found {len(self.detected_hoops)} hoop(s)")
+                # Select target altitude if a good alignment was seen
+                if self.best_scan_altitude is not None:
+                    self.desired_target_altitude = self.best_scan_altitude
                 else:
-                    # Continue scanning if no hoops found
-                    logger.warning("No hoops detected, continuing scan...")
+                    # Default to current altitude if nothing detected
+                    self.desired_target_altitude = altitude
+                # Transition if any hoop was seen or continue scanning with new sweep
+                if self.best_scan_altitude is not None or self.detected_hoops:
+                    if self.detected_hoops and self.target_hoop is None:
+                        self.target_hoop = self.detected_hoops[0]
+                    self._transition_to_phase(FlightPhase.NAVIGATE_TO_HOOP)
+                    logger.info(
+                        f"Scan complete. Selected altitude {self.desired_target_altitude:.2f} m"
+                    )
+                else:
+                    # Reset scan parameters for another sweep (possibly at different altitude)
+                    self.scan_start_yaw = yaw
+                    self.best_scan_score = -1e9
+                    self.best_scan_altitude = None
+                    self.best_scan_yaw = None
+                    logger.warning("No hoops detected in sweep; repeating scan...")
         
         elif self.phase == FlightPhase.NAVIGATE_TO_HOOP:
             if hoop_visible and hoop_distance_norm < self.config.passage_distance + 0.2:
@@ -221,7 +269,10 @@ class PhaseController:
             'flight_duration': current_time - self.flight_start_time,
             'detected_hoops': len(self.detected_hoops),
             'hoop_passages': self.hoop_passages,
-            'target_hoop': self.target_hoop
+            'target_hoop': self.target_hoop,
+            'desired_target_altitude': self.desired_target_altitude,
+            'best_scan_altitude': self.best_scan_altitude,
+            'best_scan_score': self.best_scan_score
         }
 
 
@@ -230,6 +281,8 @@ class ActionGenerator:
     
     def __init__(self, config: TrajectoryConfig):
         self.config = config
+        # Internal state for altitude sweeping during SCAN_360
+        self._scan_alt_direction: float = 1.0  # 1 for up, -1 for down
     
     def generate_action(self, phase: FlightPhase, observation: np.ndarray, 
                        drone_state: Dict[str, Any]) -> np.ndarray:
@@ -276,17 +329,29 @@ class ActionGenerator:
         return np.array([0.0, 0.0, vz_cmd, 0.0])
     
     def _scan_action(self, observation: np.ndarray, drone_state: Dict[str, Any]) -> np.ndarray:
-        """Generate scanning action - rotate in place"""
+        """Generate scanning action - rotate in place and sweep altitude to find hoop center height"""
+        hoop_y_norm = observation[1]
         hoop_visible = observation[2] > 0.5
+        altitude = float(drone_state.get('position', np.zeros(3))[2])
         
+        # Yaw behavior: rotate, slower if hoop visible for stabilization
+        yaw_rate_cmd = self.config.scan_yaw_rate * (0.33 if hoop_visible else 1.0)
+        
+        # Altitude behavior:
+        # - If hoop visible, directly converge vertically to center (y_norm -> 0)
+        # - If not visible, perform a gentle altitude sweep between min and max
         if hoop_visible:
-            # Slow down rotation when hoop is visible
-            yaw_rate_cmd = 0.1
+            # Map y_center_norm to vertical velocity (negative sign to drive toward center)
+            vz_cmd = float(np.clip(-0.6 * hoop_y_norm, -self.config.scan_altitude_rate, self.config.scan_altitude_rate))
         else:
-            # Normal scan rate
-            yaw_rate_cmd = 0.3
+            # Sweep altitude up and down within bounds
+            if altitude >= self.config.scan_altitude_max:
+                self._scan_alt_direction = -1.0
+            elif altitude <= self.config.scan_altitude_min:
+                self._scan_alt_direction = 1.0
+            vz_cmd = self._scan_alt_direction * self.config.scan_altitude_rate
         
-        return np.array([0.0, 0.0, 0.0, yaw_rate_cmd])
+        return np.array([0.0, 0.0, vz_cmd, yaw_rate_cmd])
     
     def _navigate_action(self, observation: np.ndarray, drone_state: Dict[str, Any]) -> np.ndarray:
         """Generate navigation action - approach detected hoop"""

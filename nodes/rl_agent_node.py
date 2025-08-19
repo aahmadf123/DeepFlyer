@@ -41,7 +41,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rl_agent.algorithms.p3o import P3O, P3OConfig, TrainingConfig
 from rl_agent.algorithms.replay_buffer import ReplayBuffer
-from rl_agent.env.trajectory import FlightPhase
+from rl_agent.trajectory import FlightPhase
 from rl_agent.utils import ClearMLTracker
 
 logger = logging.getLogger(__name__)
@@ -573,7 +573,7 @@ class RLAgentNode(Node):
             metrics = self.p3o_agent.update(self.replay_buffer)
             
             if metrics:
-                            self.get_logger().info(
+                self.get_logger().info(
                 f"Training: Policy Loss={metrics.get('policy_loss', 0):.4f}, "
                 f"Value Loss={metrics.get('value_loss', 0):.4f}, "
                 f"Buffer Size={len(self.replay_buffer)}"

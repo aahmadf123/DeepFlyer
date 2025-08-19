@@ -19,8 +19,8 @@ Start here:
 
 DeepFlyer implements **direct reinforcement learning control** for drones using **PX4-ROS-COM** as the primary communication protocol. Unlike traditional approaches that use RL to tune PID controllers, our approach directly outputs control commands to the drone, providing greater flexibility and performance.
 
-### MVP Flight Trajectory
-The Minimum Viable Product demonstrates:
+### Flight Trajectory
+The current system demonstrates:
 1. **Takeoff** from Point A to 0.8m altitude
 2. **360° scan** to detect hoops using ZED Mini + YOLO11
 3. **Navigate** toward single detected hoop
@@ -113,18 +113,66 @@ ros2 topic echo /deepflyer/reward_feedback
 ```
 
 ### Use the Environment in Python
-```python
-# Simple usage - just import and create
-from rl_agent.env import make_env
 
-env = make_env(enable_safety=True)
-obs, info = env.reset()
+#### Method 1: Direct Import (Recommended)
+```python
+from rl_agent.env import DeepFlyerEnv
+
+# Create environment with custom parameters
+env = DeepFlyerEnv(
+    render_mode="human",    # Enable visualization
+    size=5,                 # Environment size
+    enable_safety=True,     # Safety constraints
+    max_episode_steps=500   # Episode length
+)
+
+obs, info = env.reset(seed=42)  # Reproducible episodes
 
 for _ in range(1000):
-    action = env.action_space.sample()
+    action = env.action_space.sample()  # Random actions
     obs, reward, terminated, truncated, info = env.step(action)
+    
     if terminated or truncated:
         obs, info = env.reset()
+        
+env.close()
+```
+
+#### Method 2: Gymnasium Registration (Standard)
+```python
+import gymnasium as gym
+
+# Use registered environment (following Gymnasium standards)
+env = gym.make("DeepFlyer/HoopNavigation-v0")
+
+# Or with rendering
+env = gym.make("DeepFlyer/HoopNavigation-v1", render_mode="human")
+
+# Or with custom parameters
+env = gym.make("DeepFlyer/HoopNavigation-v0", 
+               size=10, 
+               max_episode_steps=1000,
+               enable_safety=False)
+```
+
+#### Method 3: Vectorized Training
+```python
+import gymnasium as gym
+
+# Create multiple environments for parallel training
+vec_env = gym.make_vec("DeepFlyer/HoopNavigation-v0", num_envs=4)
+observations = vec_env.reset()
+
+# Train with multiple environments simultaneously
+for step in range(1000):
+    actions = [vec_env.single_action_space.sample() for _ in range(4)]
+    observations, rewards, terminated, truncated, infos = vec_env.step(actions)
+```
+
+#### Validate Your Environment
+```bash
+# Test environment follows Gymnasium standards
+python scripts/validate_environment.py
 ```
 
 ### Training with Hyperparameter Optimization
@@ -157,7 +205,7 @@ The configuration is loaded automatically by the training nodes.
 - Traditional MAVROS bridge for backward compatibility
 - Higher latency compared to PX4-ROS-COM
 
-## P3O Algorithm [[memory:2773177]]
+## P3O Algorithm
 
 The project uses the P3O (Procrastinated Proximal Policy Optimization) algorithm for reinforcement learning:
 
@@ -168,7 +216,7 @@ The project uses the P3O (Procrastinated Proximal Policy Optimization) algorithm
 ### Key Features
 - Real-time ClearML integration for monitoring training progress
 - Automatic hyperparameter optimization with random search
-- DeepRacer-style reward function for intuitive tuning [[memory:2771338]]
+- DeepRacer-style reward function for intuitive tuning
 - Direct control without intermediate PID controllers
 agent = P3O(env, config)
 agent.train(total_timesteps=100000)
@@ -188,7 +236,7 @@ agent.train(total_timesteps=100000)
                        └──────────────────┘    └─────────────────┘
 ```
 
-## 📁 Project File Structure
+## Project File Structure
 
 ### Root Directory
 ```
@@ -208,8 +256,7 @@ DeepFlyer/
 ### Core Implementation Directories
 
 #### `rl_agent/` - Reinforcement Learning Core
-**What**: Complete P3O algorithm implementation and training infrastructure
-**Who**: Primary responsibility
+Complete P3O algorithm implementation and training infrastructure
 
 ```
 rl_agent/
@@ -221,16 +268,15 @@ rl_agent/
 │   └── base_model.py         # Neural network architectures
 ├── rewards/
 │   └── rewards.py            # Student-tunable reward functions
-├── env/                      # 🌍 Training environments (not for teammates)
-├── direct_control_agent.py   # 🎮 Direct RL control agent
-├── direct_control_node.py    # 📡 ROS2 node for direct control
-├── px4_training_node.py      # 🚁 PX4 training integration
+├── env/                      # Training environments (not for teammates)
+├── direct_control_agent.py   # Direct RL control agent
+├── direct_control_node.py    # ROS2 node for direct control
+├── px4_training_node.py      # PX4 training integration
 └── utils.py                  # Utility functions
 ```
 
-#### 🌐 `api/` - Backend Integration
-**What**: ML interface for backend integration with ClearML and databases
-**Who**: (Backend/UI) - primary integration point
+#### `api/` - Backend Integration
+ML interface for backend integration with ClearML and databases
 
 ```
 api/
@@ -241,8 +287,7 @@ api/
 ```
 
 #### `nodes/` - ROS2 System Nodes  
-**What**: Production ROS2 nodes for system integration
-**Who**: (ROS/Simulation) - these are what simulation must interface with
+Production ROS2 nodes for system integration
 
 ```
 nodes/
@@ -254,9 +299,8 @@ nodes/
 └── course_manager_node.py     # MVP trajectory coordination
 ```
 
-#### 📨 `msg/` - ROS2 Message Definitions
-**What**: Custom message types for system communication
-**Who**: (ROS/Simulation) - these define interface contracts
+#### `msg/` - ROS2 Message Definitions
+Custom message types for system communication
 
 ```
 msg/
@@ -269,9 +313,8 @@ msg/
 
 ### Development & Testing
 
-#### 🧪 `scripts/` - Testing & Integration
-**What**: Essential testing scripts for system validation
-**Who**: for testing their integrations
+#### `scripts/` - Testing & Integration
+Essential testing scripts for system validation
 
 ```
 scripts/

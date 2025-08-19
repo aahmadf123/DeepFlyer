@@ -324,7 +324,7 @@ class HoopRewardFunction:
 # Registry for reward functions
 REGISTRY = {}
 
-class RewardComponentType(Enum):
+class LegacyRewardComponentType(Enum):
     """Types of reward components for classifying and configuring rewards."""
     FOLLOW_TRAJECTORY = "follow_trajectory"
     HEADING_ERROR = "heading_error"
@@ -332,7 +332,7 @@ class RewardComponentType(Enum):
 class RewardComponent:
     def __init__(
         self, 
-        component_type: RewardComponentType,
+        component_type: "LegacyRewardComponentType",
         fn: Callable[[Dict[str, Any], Dict[str, Any], Optional[Dict[str, Any]]], float],
         weight: float = 1.0,
         parameters: Optional[Dict[str, Any]] = None
@@ -359,12 +359,12 @@ class RewardFunction:
         self.component_values = {}
     def add_component(
         self, 
-        component_type: Union[str, RewardComponentType], 
+        component_type: Union[str, "LegacyRewardComponentType"], 
         weight: float = 1.0,
         parameters: Optional[Dict[str, Any]] = None
     ) -> None:
         if isinstance(component_type, str):
-            component_type = RewardComponentType(component_type)
+            component_type = LegacyRewardComponentType(component_type)
         component_fn = get_component_fn(component_type)
         component = RewardComponent(
             component_type=component_type,
@@ -447,10 +447,10 @@ def heading_error_reward(
     max_heading_error = params.get("max_heading_error", np.pi)
     return -heading_error / max_heading_error
 
-def get_component_fn(component_type: RewardComponentType) -> Callable:
+def get_component_fn(component_type: "LegacyRewardComponentType") -> Callable:
     component_map = {
-        RewardComponentType.FOLLOW_TRAJECTORY: follow_trajectory_reward,
-        RewardComponentType.HEADING_ERROR: heading_error_reward,
+        LegacyRewardComponentType.FOLLOW_TRAJECTORY: follow_trajectory_reward,
+        LegacyRewardComponentType.HEADING_ERROR: heading_error_reward,
     }
     if component_type not in component_map:
         raise ValueError(f"No function registered for component type: {component_type}")
@@ -459,7 +459,7 @@ def get_component_fn(component_type: RewardComponentType) -> Callable:
 def create_cross_track_and_heading_reward(cross_track_weight=1.0, heading_weight=0.1, max_error=2.0, max_heading_error=np.pi, trajectory=None):
     reward_fn = RewardFunction()
     reward_fn.add_component(
-        RewardComponentType.FOLLOW_TRAJECTORY,
+        LegacyRewardComponentType.FOLLOW_TRAJECTORY,
         weight=cross_track_weight,
         parameters={
             "cross_track_weight": 1.0,
@@ -469,7 +469,7 @@ def create_cross_track_and_heading_reward(cross_track_weight=1.0, heading_weight
         }
     )
     reward_fn.add_component(
-        RewardComponentType.HEADING_ERROR,
+        LegacyRewardComponentType.HEADING_ERROR,
         weight=heading_weight,
         parameters={"max_heading_error": max_heading_error}
     )
