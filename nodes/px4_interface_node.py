@@ -40,7 +40,7 @@ from std_msgs.msg import Header
 from geometry_msgs.msg import Point
 
 # Custom message imports
-from deepflyer_msgs.msg import RLAction, CourseState
+from deepflyer.msg import RLAction, CourseState
 
 # Import trajectory components
 import sys

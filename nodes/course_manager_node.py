@@ -13,7 +13,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 try:
-    from deepflyer_msgs.msg import CourseState, DroneState
+    from deepflyer.msg import CourseState, DroneState
     CUSTOM_MSGS_AVAILABLE = True
 except ImportError:
     CUSTOM_MSGS_AVAILABLE = False

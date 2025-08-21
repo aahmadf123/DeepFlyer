@@ -17,7 +17,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 # Custom messages
 try:
-    from deepflyer_msgs.msg import RewardFeedback, DroneState, CourseState, VisionFeatures, RLAction
+    from deepflyer.msg import RewardFeedback, DroneState, CourseState, VisionFeatures, RLAction
     CUSTOM_MSGS_AVAILABLE = True
 except ImportError:
     CUSTOM_MSGS_AVAILABLE = False

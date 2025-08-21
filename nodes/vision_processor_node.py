@@ -33,7 +33,7 @@ from std_msgs.msg import Header
 from geometry_msgs.msg import Point
 
 # Custom message imports
-from deepflyer_msgs.msg import VisionFeatures
+from deepflyer.msg import VisionFeatures
 
 # Import our depth processing components
 import sys

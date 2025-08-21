@@ -33,7 +33,7 @@ from std_msgs.msg import Header
 from px4_msgs.msg import VehicleLocalPosition
 
 # Custom message imports
-from deepflyer_msgs.msg import VisionFeatures, CourseState, RLAction, RewardFeedback
+from deepflyer.msg import VisionFeatures, CourseState, RLAction, RewardFeedback
 
 # Import RL components
 import sys

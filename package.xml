@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypeDefinition="xmlschema"?>
 <package format="3">
-  <name>deepflyer_msgs</name>
+  <name>deepflyer</name>
   <version>1.0.0</version>
-  <description>DeepFlyer custom ROS2 message types for ML/RL integration</description>
+  <description>DeepFlyer Drone RL Platform - Custom ROS2 messages and nodes</description>
   
   <maintainer email="ahmad@deepflyer.ai">Ahmad</maintainer>
   <license>MIT</license>

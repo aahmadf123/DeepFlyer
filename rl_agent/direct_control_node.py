@@ -23,7 +23,7 @@ from px4_msgs.msg import (
 from std_msgs.msg import Bool, Float32
 
 # Custom messages
-from deepflyer_msgs.msg import (
+from deepflyer.msg import (
     VisionFeatures,
     DroneState,
     RLAction,

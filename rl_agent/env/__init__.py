@@ -14,6 +14,40 @@ import gymnasium as gym
 # Main environment (recommended)
 from .px4_env import DeepFlyerEnv, make_deepflyer_env
 
+# Register environments with Gymnasium
+try:
+    from gymnasium.envs.registration import register
+    
+    # Register the main DeepFlyer environment
+    register(
+        id='DeepFlyer-v1',
+        entry_point='rl_agent.env.px4_env:DeepFlyerEnv',
+        max_episode_steps=500,
+        kwargs={
+            'render_mode': None,
+            'size': 5,
+            'max_episode_steps': 500,
+            'enable_safety': True
+        }
+    )
+    
+    # Register with rendering enabled
+    register(
+        id='DeepFlyer-Render-v1',
+        entry_point='rl_agent.env.px4_env:DeepFlyerEnv',
+        max_episode_steps=500,
+        kwargs={
+            'render_mode': 'human',
+            'size': 5,
+            'max_episode_steps': 500,
+            'enable_safety': True
+        }
+    )
+    
+    ENV_REGISTERED = True
+except (ImportError, Exception) as e:
+    ENV_REGISTERED = False
+
 # Optional base components (for advanced users - may not be available)
 try:
     from .vision_processor import create_yolo11_processor

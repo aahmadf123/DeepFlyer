@@ -4,14 +4,16 @@ DeepFlyer is a production-ready educational drone reinforcement learning platfor
 
 ## Project Navigation
 
-Start here:
+### 🚀 Getting Started
+- **[Quick Start Guide](docs/QUICKSTART.md)** - Get up and running in 15 minutes
+- **[Installation Instructions](docs/INSTALLATION.md)** - Detailed setup guide
 
-### For Team Members
+### 👥 For Team Members
 - **[Jay (Backend/UI Developer)](api/JAY_INTEGRATION_GUIDE.md)** - Complete backend integration documentation
 - **[Uma (Simulation/ROS Developer)](UMA_INTEGRATION_GUIDE.md)** - Simulation and ROS integration specifications
 - **[Technical Overview](TEAM_OVERVIEW.md)** - Detailed technical reference for all ML/RL implementation
 
-### For Project Understanding
+### 📚 For Project Understanding
 - **[Integration Overview](INTEGRATION_GUIDE.md)** - High-level system architecture and integration strategy
 - **[Detailed Design Docs](docs/)** - In-depth technical design documentation
 

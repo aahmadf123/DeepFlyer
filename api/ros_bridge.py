@@ -23,7 +23,7 @@ except ImportError:
 
 # Custom messages (when available)
 try:
-    from deepflyer_msgs.msg import RewardFeedback, CourseState, VisionFeatures
+    from deepflyer.msg import RewardFeedback, CourseState, VisionFeatures
     CUSTOM_MSGS_AVAILABLE = True
 except ImportError:
     CUSTOM_MSGS_AVAILABLE = False

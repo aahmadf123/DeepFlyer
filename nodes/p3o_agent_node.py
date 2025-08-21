@@ -13,7 +13,7 @@ from typing import Dict, Optional
 import time
 
 # Custom messages
-from deepflyer_msgs.msg import (
+from deepflyer.msg import (
     VisionFeatures, DroneState, CourseState,
     RLAction, RewardFeedback
 )
