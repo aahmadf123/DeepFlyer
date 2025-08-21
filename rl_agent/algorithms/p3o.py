@@ -135,7 +135,7 @@ class P3ONetwork(nn.Module):
         return procrastinated_action, log_prob, value
     
     def evaluate_actions(self, obs: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Evaluate actions for PPO loss calculation"""
+        """Evaluate actions for P3O loss calculation"""
         action_mean, value = self.forward(obs)
         
         std = self.policy_log_std.exp()
@@ -218,7 +218,7 @@ class P3O:
         with torch.no_grad():
             old_log_probs, _, _ = self.network.evaluate_actions(obs, actions)
         
-        # PPO update epochs
+        # P3O update epochs
         total_policy_loss = 0
         total_value_loss = 0
         total_entropy = 0
@@ -227,7 +227,7 @@ class P3O:
             # Evaluate current policy
             log_probs, values, entropy = self.network.evaluate_actions(obs, actions)
             
-            # Calculate ratio for PPO
+            # Calculate ratio for P3O clipping
             ratio = torch.exp(log_probs - old_log_probs)
             
             # Clipped surrogate loss

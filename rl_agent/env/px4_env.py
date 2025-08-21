@@ -1,12 +1,15 @@
 """
 DeepFlyer Hoop Navigation Environment
-Main RL environment for drone hoop navigation training
+Main RL environment for drone hoop navigation training with AWS DeepRacer-style episode management
 """
 
 import numpy as np
 import gymnasium as gym
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 import logging
+
+from .flight_phases import FlightPhaseManager, FlightPhase, HoopTarget
+from .px4_env_extensions import add_flight_phase_methods
 
 # Optional ROS imports - environment works without them
 try:
@@ -30,6 +33,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+@add_flight_phase_methods
 class DeepFlyerEnv(gym.Env):
     """
     DeepFlyer Hoop Navigation Environment - Gymnasium Compliant
@@ -114,6 +118,20 @@ class DeepFlyerEnv(gym.Env):
         self.hoops_passed = 0
         self.episode_start_time = 0.0
         
+        # Initialize flight phase manager (AWS DeepRacer-style episode structure)
+        self.flight_manager = FlightPhaseManager(
+            takeoff_altitude=0.8,
+            scan_altitude=1.2,
+            max_scan_time=30.0,
+            max_navigate_time=120.0,
+            safety_bounds=(-self.size, self.size, -self.size, self.size)
+        )
+        
+        # Multi-hoop detection and navigation
+        self.detected_hoops = []
+        self.current_scan_yaw = 0.0
+        self.scan_complete = False
+        
         # Hoop navigation state
         self._agent_location = np.array([0.0, 0.0, 1.0], dtype=np.float32)  # [x, y, z]
         self._target_location = np.array([2.0, 2.0, 1.0], dtype=np.float32)  # [x, y, z]
@@ -148,30 +166,22 @@ class DeepFlyerEnv(gym.Env):
         self.hoops_passed = 0
         self.episode_start_time = 0.0
         
-        # Reset agent state randomly within bounds
-        if seed is not None:
-            np.random.seed(seed)
+        # Reset flight phase manager (AWS DeepRacer-style reset to start)
+        start_position = np.array([0.0, 0.0, 0.0], dtype=np.float32)  # Always start at origin
+        self.flight_manager.reset_episode(start_position)
         
-        # Random spawn position
-        self._agent_location = np.array([
-            np.random.uniform(0.5, self.size - 0.5),
-            np.random.uniform(0.5, self.size - 0.5),
-            1.0  # Fixed altitude
-        ], dtype=np.float32)
-        
-        # Random target position (different from agent)
-        while True:
-            self._target_location = np.array([
-                np.random.uniform(0.5, self.size - 0.5),
-                np.random.uniform(0.5, self.size - 0.5),
-                1.0
-            ], dtype=np.float32)
-            if np.linalg.norm(self._target_location - self._agent_location) > 1.0:
-                break
-        
-        # Reset velocity
+        # Reset agent to takeoff position (like DeepRacer reset to start line)
+        self._agent_location = start_position.copy()
         self._agent_velocity = np.array([0.0, 0.0, 0.0], dtype=np.float32)
         self._yaw_rate = 0.0
+        self.current_scan_yaw = 0.0
+        
+        # Reset hoop detection state
+        self.detected_hoops = []
+        self.scan_complete = False
+        
+        # Generate random hoops in environment (simulate real world)
+        self._generate_random_hoops(seed)
         
         # Get initial observation
         observation = self._get_obs()
@@ -221,20 +231,32 @@ class DeepFlyerEnv(gym.Env):
                                      [0.0, 0.0, 0.5], 
                                      [self.size, self.size, 2.0])
         
-        # Check termination conditions
+        # Update flight phase (AWS DeepRacer-style episode management)
+        dt = 0.05  # 20 Hz timestep
+        detected_hoop_objects = self._simulate_hoop_detection()
+        
+        current_phase, phase_info = self.flight_manager.update_phase(
+            self._agent_location,
+            self.current_scan_yaw,
+            detected_hoop_objects,
+            dt
+        )
+        
+        # Update scan yaw during SCAN phase
+        if current_phase == FlightPhase.SCAN:
+            self.current_scan_yaw += self._yaw_rate * dt
+            
+        # Check termination conditions (like DeepRacer off-track reset)
         terminated = False
         truncated = False
         
-        # Check if reached target (within 0.3m)
-        distance_to_target = np.linalg.norm(self._agent_location - self._target_location)
-        if distance_to_target < 0.3:
+        # Episode success (completed all phases)
+        if current_phase == FlightPhase.LAND and phase_info.get('success', False):
             terminated = True
-            self.hoops_passed += 1
-        
-        # Check collision with boundaries
-        if (self._agent_location[0] <= 0.1 or self._agent_location[0] >= self.size - 0.1 or
-            self._agent_location[1] <= 0.1 or self._agent_location[1] >= self.size - 0.1 or
-            self._agent_location[2] <= 0.2):
+            self.hoops_passed = self.flight_manager.hoops_traversed
+            
+        # Episode failure (like DeepRacer going off track)
+        if current_phase == FlightPhase.FAILED:
             terminated = True
         
         # Check episode length
@@ -245,7 +267,7 @@ class DeepFlyerEnv(gym.Env):
         # Get observation
         observation = self._get_obs()
         
-        # Calculate reward
+        # Calculate reward with phase-aware system
         if self.use_reward:
             params = {
                 'hoop_detected': bool(observation['hoop_visible']),
@@ -256,22 +278,27 @@ class DeepFlyerEnv(gym.Env):
                 'vy_norm': float(observation['drone_vy_norm']),
                 'vz_norm': float(observation['drone_vz_norm']),
                 'yaw_rate_norm': float(observation['yaw_rate_norm']),
-                'collision': False,
-                'out_of_bounds': False,
-                'hoop_passed': self.hoops_passed > 0,
+                'collision': current_phase == FlightPhase.FAILED,
+                'out_of_bounds': phase_info.get('failure_reason') == 'Out of bounds',
+                'hoop_passed': self.flight_manager.hoops_traversed > 0,
+                # Phase-specific parameters
+                'flight_phase': current_phase.value,
+                'phase_progress': phase_info.get('progress', 0.0),
+                'hoops_detected': len(self.flight_manager.detected_hoops),
+                'scan_progress': phase_info.get('scan_progress', 0.0) if current_phase == FlightPhase.SCAN else 1.0,
             }
             reward = reward_function(params)
         else:
-            # Simple distance-based reward
-            reward = -distance_to_target
-            if terminated and distance_to_target < 0.3:
-                reward += 10.0  # Success bonus
+            # Phase-based simple reward
+            reward = self._calculate_phase_reward(current_phase, phase_info)
         
-        # Build info dict
+        # Build info dict with flight phase information
         info = self._get_info()
-        # No component breakdown in functional reward path
-        info['distance_to_target'] = distance_to_target
+        info.update(phase_info)  # Add phase-specific info
         info['episode_step'] = self.current_step
+        info['flight_phase'] = current_phase.value
+        info['hoops_detected'] = len(self.flight_manager.detected_hoops)
+        info['hoops_traversed'] = self.flight_manager.hoops_traversed
         
         return observation, float(reward), terminated, truncated, info
     

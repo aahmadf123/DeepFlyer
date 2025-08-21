@@ -308,7 +308,7 @@ def get_reward_preset(name: str) -> RewardConfig:
 
 def reward_function(params: Dict[str, Any]) -> float:
     """
-    DeepRacer-style reward entrypoint.
+    DeepRacer-style reward entrypoint with flight phase awareness.
 
     Expected params (best-effort; missing keys are handled safely):
     - hoop_detected: bool
@@ -319,6 +319,12 @@ def reward_function(params: Dict[str, Any]) -> float:
     - hoop_passed: bool
     - collision: bool
     - out_of_bounds: bool
+    
+    # Flight phase specific params:
+    - flight_phase: str (takeoff, scan, plan, navigate, return, land, failed)
+    - phase_progress: float in [0, 1]
+    - hoops_detected: int (number of hoops found during scan)
+    - scan_progress: float in [0, 1] (360° scan completion)
     """
     cfg = RewardConfig()
     total = 0.0
@@ -367,7 +373,29 @@ def reward_function(params: Dict[str, Any]) -> float:
     if abs(yaw_rate) > 0.8:
         total += cfg.excessive_yaw_penalty
 
-    # 4) Time penalty per step
+    # 4) Flight phase bonuses (AWS DeepRacer-style progress rewards)
+    flight_phase = params.get('flight_phase', 'takeoff')
+    phase_progress = float(params.get('phase_progress', 0.0))
+    
+    if flight_phase == 'takeoff':
+        total += 5.0 * phase_progress  # Reward taking off
+    elif flight_phase == 'scan':
+        scan_progress = float(params.get('scan_progress', 0.0))
+        hoops_detected = int(params.get('hoops_detected', 0))
+        total += 10.0 * scan_progress  # Reward 360° scanning
+        total += 15.0 * hoops_detected  # Big bonus for finding hoops
+    elif flight_phase == 'navigate':
+        total += 20.0 * phase_progress  # Major reward for navigation progress
+    elif flight_phase == 'return':
+        total += 10.0 * phase_progress  # Reward returning home
+    elif flight_phase == 'land':
+        total += 25.0 * phase_progress  # Reward safe landing
+        if phase_progress >= 1.0:
+            total += 100.0  # Huge bonus for successful episode completion
+    elif flight_phase == 'failed':
+        total -= 100.0  # Heavy penalty for failure (like DeepRacer off-track)
+
+    # 5) Time penalty per step
     total += cfg.time_penalty_per_step
 
     return float(total)
