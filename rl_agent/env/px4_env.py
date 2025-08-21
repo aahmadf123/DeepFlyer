@@ -16,9 +16,9 @@ except ImportError:
     SAFETY_AVAILABLE = False
     
 try:
-    from ..rewards.rewards import HoopRewardFunction, HoopRewardConfig
+    from ..rewards.rewards import HoopNavigationReward, RewardConfig
     REWARDS_AVAILABLE = True
-except ImportError:
+except Exception:
     REWARDS_AVAILABLE = False
 
 try:
@@ -82,7 +82,7 @@ class DeepFlyerEnv(gym.Env):
         
         # Initialize reward function (optional)
         if REWARDS_AVAILABLE:
-            self.reward_function = HoopRewardFunction()
+            self.reward_function = HoopNavigationReward()
         else:
             self.reward_function = None
         

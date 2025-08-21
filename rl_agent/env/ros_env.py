@@ -28,20 +28,8 @@ try:
     ROS_AVAILABLE = True
 except ImportError:
     ROS_AVAILABLE = False
-    Node = object  # Dummy for type hints
+    Node = object  # Placeholder type when ROS is unavailable
     MAVROS_AVAILABLE = False
-    
-    # Import mock classes
-    from .mock_ros import (
-        MockNode as Node,
-        MockImage as Image,
-        MockPose as Pose,
-        MockTwist as Twist,
-        MockImu as Imu,
-        MockMAVROSState as State,
-        MockMAVROSService,
-        MockZEDNode,
-    )
 
 logger = logging.getLogger(__name__)
 
@@ -410,12 +398,8 @@ class RosEnvNode(Node):
     def arm(self, arm: bool = True) -> bool:
         """Arm or disarm the drone using MAVROS."""
         if not MAVROS_AVAILABLE:
-            if not ROS_AVAILABLE:
-                # Use mock
-                return MockMAVROSService.arm(arm)
-            else:
-                self.get_logger().warn("MAVROS not available, cannot arm/disarm")
-                return False
+            self.get_logger().warning("MAVROS not available, cannot arm/disarm")
+            return False
             
         # Send arm command through service
         if ROS_AVAILABLE:
@@ -433,12 +417,8 @@ class RosEnvNode(Node):
     def set_mode(self, mode: str) -> bool:
         """Set flight mode using MAVROS."""
         if not MAVROS_AVAILABLE:
-            if not ROS_AVAILABLE:
-                # Use mock
-                return MockMAVROSService.set_mode(mode)
-            else:
-                self.get_logger().warn(f"MAVROS not available, cannot set mode to {mode}")
-                return False
+            self.get_logger().warning(f"MAVROS not available, cannot set mode to {mode}")
+            return False
             
         # Send mode command through service
         if ROS_AVAILABLE:
@@ -541,9 +521,8 @@ class RosEnv(gym.Env):
             self.ros_thread = Thread(target=self._spin_ros, daemon=True)
             self.ros_thread.start()
         else:
-            # Use mock for testing without ROS
-            self.node = RosEnvNode(namespace, use_zed=use_zed)
-            logger.warning("ROS2 not available, using mock objects for testing")
+            # No mock fallback in production
+            raise RuntimeError("ROS2 is not available. Install ROS2 and required packages to use RosEnv.")
         
         # Wait for initial sensor data
         self._wait_for_sensors()

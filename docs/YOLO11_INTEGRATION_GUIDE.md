@@ -69,17 +69,13 @@ if features.primary_hoop:
 ### Integrated Environment
 
 ```python
-from rl_agent.env.integrated_vision_env import create_vision_mavros_env
+from rl_agent.env import DeepFlyerEnv
 
-# Create environment with YOLO11 vision
-env = create_vision_mavros_env(
-    yolo_model_size="n",
-    confidence_threshold=0.3
-)
+# Create environment (vision runs in dedicated ROS node)
+env = DeepFlyerEnv()
 
-# Environment now includes vision features in observations
+# Use `nodes/vision_processor_node.py` to publish vision features
 obs, info = env.reset()
-print(obs['vision']['hoop_detected'])  # Vision observation space
 ```
 
 ## Model Selection
@@ -238,18 +234,10 @@ The system tracks:
 Replace existing vision processing:
 
 ```python
-# OLD: Traditional computer vision
-from rl_agent.env.mavros_env import MavrosEnv
+from rl_agent.env import DeepFlyerEnv
 
-# NEW: YOLO11 vision
-from rl_agent.env.integrated_vision_env import IntegratedVisionMavrosEnv
-
-# Change environment creation
-env = IntegratedVisionMavrosEnv(
-    yolo_model_size="n",
-    confidence_threshold=0.3,
-    # ... other existing parameters
-)
+env = DeepFlyerEnv()
+# Run the ROS `vision_processor_node.py` for YOLO11 + ZED integration
 ```
 
 ### Observation Space Changes
@@ -321,16 +309,12 @@ print(f"Detections: {len(features.all_hoops)}")
 2. **Update Imports**
    ```python
    # Replace old imports
-   from rl_agent.env.integrated_vision_env import IntegratedVisionMavrosEnv
+   from rl_agent.env import DeepFlyerEnv
    ```
 
 3. **Modify Environment Creation**
    ```python
-   # Old
-   env = MavrosEnv()
-   
-   # New
-   env = IntegratedVisionMavrosEnv(yolo_model_size="n")
+   env = DeepFlyerEnv()
    ```
 
 4. **Update Observation Handling**

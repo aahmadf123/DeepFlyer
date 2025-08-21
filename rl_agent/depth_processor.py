@@ -28,14 +28,14 @@ try:
     YOLO_AVAILABLE = True
 except ImportError:
     YOLO_AVAILABLE = False
-    logging.warning("YOLO not available, using mock detection")
+    logging.error("YOLO not available. Install 'ultralytics' for production use.")
 
 try:
     import pyzed.sl as sl
     ZED_AVAILABLE = True
 except ImportError:
     ZED_AVAILABLE = False
-    logging.warning("ZED SDK not available, using mock camera")
+    logging.error("ZED SDK not available. Install 'pyzed' for production use.")
 
 logger = logging.getLogger(__name__)
 
@@ -299,8 +299,7 @@ class YOLO11HoopDetector:
     def load_model(self) -> bool:
         """Load YOLO11 model"""
         if not YOLO_AVAILABLE:
-            logger.warning("YOLO not available, using mock detection")
-            return False
+            raise RuntimeError("Ultralytics YOLO is not installed. Cannot load model in production.")
         
         try:
             self.model = YOLO(self.model_path)
@@ -322,13 +321,8 @@ class YOLO11HoopDetector:
         Returns:
             List of detection dictionaries with bbox, confidence, etc.
         """
-        if not self.is_loaded and YOLO_AVAILABLE:
-            logger.warning("YOLO model not loaded")
-            return []
-        
-        if not YOLO_AVAILABLE:
-            # Mock detection for testing
-            return self._mock_detection(rgb_image)
+        if not self.is_loaded:
+            raise RuntimeError("YOLO model not loaded. Call load_model() before detection.")
         
         try:
             # Run inference
@@ -354,27 +348,7 @@ class YOLO11HoopDetector:
             
         except Exception as e:
             logger.error(f"Error in YOLO detection: {e}")
-            return []
-    
-    def _mock_detection(self, rgb_image: np.ndarray) -> List[Dict[str, Any]]:
-        """Mock detection for testing when YOLO is not available"""
-        height, width = rgb_image.shape[:2]
-        
-        # Simulate a hoop detection in center of image
-        center_x = width // 2
-        center_y = height // 2
-        box_size = min(width, height) // 6
-        
-        return [{
-            'bbox': [
-                center_x - box_size,
-                center_y - box_size,
-                center_x + box_size,
-                center_y + box_size
-            ],
-            'confidence': 0.85,
-            'class': 'hoop'
-        }]
+            raise
 
 
 class MVPDepthProcessor:
@@ -436,8 +410,7 @@ class MVPDepthProcessor:
         # Get frame from ZED camera
         frame_data = self.zed_processor.get_frame()
         if frame_data is None:
-            # No frame available
-            return 0.0, 0.0, 0, 1.0
+            raise RuntimeError("No frame available from ZED camera in production mode.")
         
         rgb_image, depth_image = frame_data
         
@@ -445,9 +418,8 @@ class MVPDepthProcessor:
         detections = self.yolo_detector.detect_hoops(rgb_image)
         
         if not detections:
-            # No hoops detected
             self.last_detection = None
-            return 0.0, 0.0, 0, 1.0
+            raise RuntimeError("No hoops detected. Ensure model and camera are configured correctly.")
         
         # Process best detection (highest confidence)
         best_detection = max(detections, key=lambda d: d['confidence'])
@@ -573,36 +545,4 @@ class MVPDepthProcessor:
         logger.info("MVP Depth Processor disconnected")
 
 
-# Convenience functions for integration
-def create_mvp_depth_processor(**kwargs) -> MVPDepthProcessor:
-    """Create MVP depth processor with default settings"""
-    return MVPDepthProcessor(**kwargs)
-
-
-def process_single_frame(processor) -> Dict[str, float]:
-    """Process a single frame with the MVP depth processor"""
-    try:
-        rgb_image, depth_image = processor.capture_frame()
-        if rgb_image is None or depth_image is None:
-            return {
-                'hoop_visible': 0.0,
-                'hoop_x_center_norm': 0.0,
-                'hoop_y_center_norm': 0.0,
-                'hoop_distance_norm': 1.0
-            }
-        
-        features = processor.process_frame(rgb_image, depth_image)
-        return {
-            'hoop_visible': features['hoop_detected'],
-            'hoop_x_center_norm': features['hoop_x_center'],
-            'hoop_y_center_norm': features['hoop_y_center'],
-            'hoop_distance_norm': features['hoop_distance']
-        }
-    except Exception as e:
-        logger.error(f"Error processing frame: {e}")
-        return {
-            'hoop_visible': 0.0,
-            'hoop_x_center_norm': 0.0,
-            'hoop_y_center_norm': 0.0,
-            'hoop_distance_norm': 1.0
-        } 
+# Removed convenience/testing helpers to keep production surface minimal

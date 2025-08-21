@@ -17,7 +17,7 @@ try:
     ZED_AVAILABLE = True
 except ImportError:
     ZED_AVAILABLE = False
-    logger.warning("ZED SDK not available, using mock interface")
+    logger.error("ZED SDK not available. Install 'pyzed' for production use.")
 
 
 class ZEDInterface(ABC):
@@ -233,58 +233,9 @@ class ZEDMiniCamera(ZEDInterface):
 
 
 class MockZEDCamera(ZEDInterface):
-    """Mock ZED camera for testing without hardware"""
-    
-    def __init__(self, resolution: str = "HD720", fps: int = 30, depth_mode: str = "NEURAL"):
-        self.resolution = resolution
-        self.fps = fps
-        self.depth_mode = depth_mode
-        self.initialized = False
-        
-        # Image dimensions
-        if resolution == "HD720":
-            self.width, self.height = 1280, 720
-        elif resolution == "HD1080":
-            self.width, self.height = 1920, 1080
-        else:
-            self.width, self.height = 640, 480
-    
-    def initialize(self) -> bool:
-        """Initialize mock camera"""
-        self.initialized = True
-        logger.info(f"Mock ZED camera initialized: {self.resolution} @ {self.fps}fps")
-        return True
-    
-    def grab_frame(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """Generate mock RGB and depth frames"""
-        if not self.initialized:
-            return None, None
-        
-        # Generate mock RGB image (random noise for now)
-        rgb_image = np.random.randint(0, 255, (self.height, self.width, 3), dtype=np.uint8)
-        
-        # Generate mock depth map (gradient from center)
-        y, x = np.ogrid[:self.height, :self.width]
-        center_x, center_y = self.width / 2, self.height / 2
-        depth_map = np.sqrt((x - center_x)**2 + (y - center_y)**2) / 500.0 + 1.0
-        depth_map = depth_map.astype(np.float32)
-        
-        return rgb_image, depth_map
-    
-    def get_depth_at_point(self, x: int, y: int) -> float:
-        """Get mock depth value"""
-        if not self.initialized:
-            return -1.0
-        
-        # Simple distance from center
-        center_x, center_y = self.width / 2, self.height / 2
-        distance = np.sqrt((x - center_x)**2 + (y - center_y)**2) / 500.0 + 1.0
-        return float(distance)
-    
-    def close(self):
-        """Close mock camera"""
-        self.initialized = False
-        logger.info("Mock ZED camera closed")
+    """Disabled in production. Use real ZED or ROS interface."""
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError("MockZEDCamera is not available in production.")
 
 
 class ZEDROSInterface(ZEDInterface):
@@ -375,14 +326,12 @@ def create_zed_interface(mode: str = "direct", **kwargs) -> ZEDInterface:
         ZED interface instance
     """
     if mode == "direct":
-        if ZED_AVAILABLE:
-            return ZEDMiniCamera(**kwargs)
-        else:
-            logger.warning("ZED SDK not available, using mock interface")
-            return MockZEDCamera(**kwargs)
+        if not ZED_AVAILABLE:
+            raise RuntimeError("ZED SDK not available for direct mode. Install 'pyzed'.")
+        return ZEDMiniCamera(**kwargs)
     elif mode == "ros":
         return ZEDROSInterface(**kwargs)
     elif mode == "mock":
-        return MockZEDCamera(**kwargs)
+        raise RuntimeError("Mock ZED mode is disabled in production.")
     else:
         raise ValueError(f"Unknown ZED interface mode: {mode}")

@@ -4,7 +4,7 @@ AWS DeepRacer-style tunable reward system
 """
 
 import numpy as np
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from dataclasses import dataclass
 import logging
 
@@ -306,82 +306,4 @@ def get_reward_preset(name: str) -> RewardConfig:
     return REWARD_PRESETS[name]
 
 
-# Student-editable reward function template
-def student_reward_function(obs: np.ndarray, action: np.ndarray, 
-                           info: Dict[str, Any]) -> float:
-    """
-    Student-editable reward function
-    
-    This function is called at each step to calculate the reward.
-    Students can modify the logic to create their own reward strategy.
-    
-    Args:
-        obs: 8D observation vector
-            [0]: hoop_center_x (-1 to 1, 0 is centered)
-            [1]: hoop_center_y (-1 to 1, 0 is centered)
-            [2]: hoop_visible (0 or 1)
-            [3]: hoop_distance (0 to 1, 0 is very close)
-            [4]: velocity_x (-1 to 1)
-            [5]: velocity_y (-1 to 1)
-            [6]: velocity_z (-1 to 1)
-            [7]: yaw_rate (-1 to 1)
-        
-        action: 4D action vector
-            [0]: velocity_x command (-1 to 1)
-            [1]: velocity_y command (-1 to 1)
-            [2]: velocity_z command (-1 to 1)
-            [3]: yaw_rate command (-1 to 1)
-        
-        info: Dictionary with additional information
-            'collision': bool - True if drone hit something
-            'out_of_bounds': bool - True if drone left safe area
-            'hoop_passed': bool - True if drone passed through hoop
-            'position': [x, y, z] - Current drone position
-            'time_elapsed': float - Time since episode start
-    
-    Returns:
-        reward: float - The reward value for this step
-    """
-    
-    # Initialize reward
-    reward = 0.0
-    
-    # STUDENT CODE STARTS HERE
-    # ========================
-    
-    # Example 1: Reward for seeing the hoop
-    if obs[2] > 0.5:  # Hoop is visible
-        reward += 1.0
-    
-    # Example 2: Reward for alignment
-    horizontal_error = abs(obs[0])
-    vertical_error = abs(obs[1])
-    alignment_reward = (1.0 - horizontal_error) + (1.0 - vertical_error)
-    reward += alignment_reward * 5.0
-    
-    # Example 3: Reward for getting closer
-    distance = obs[3]
-    if distance < 0.5:  # Within half the max range
-        proximity_reward = (1.0 - distance) * 10.0
-        reward += proximity_reward
-    
-    # Example 4: Big reward for passing through hoop
-    if info.get('hoop_passed', False):
-        reward += 100.0
-    
-    # Example 5: Penalties
-    if info.get('collision', False):
-        reward -= 50.0
-    
-    if info.get('out_of_bounds', False):
-        reward -= 30.0
-    
-    # Example 6: Encourage forward movement
-    forward_speed = obs[4]
-    if forward_speed > 0:
-        reward += forward_speed * 2.0
-    
-    # STUDENT CODE ENDS HERE
-    # ======================
-    
-    return reward
+"""Removed student template function for production readiness."""

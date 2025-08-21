@@ -64,7 +64,7 @@ class PX4BaseEnv(RosEnv):
         self.zed_interface: Optional[ZEDInterface] = None
         if use_zed:
             try:
-                self.zed_interface = create_zed_interface("auto")
+                self.zed_interface = create_zed_interface("direct")
                 logger.info("ZED interface initialized")
             except Exception as e:
                 logger.warning(f"Failed to initialize ZED interface: {e}")

@@ -59,8 +59,8 @@ All core components are implemented with production-ready code:
 - **MessageConverter** - Coordinate transformations and message utilities
 
 ### 4. **Production Environment Classes** (`rl_agent/env/px4_base_env.py`)
-- **PX4DroneEnv** - Main environment class for drone control
-- **PX4BaseEnv** - Common functionality base class
+- **DeepFlyerEnv (rl_agent.env.px4_env)** - Main environment class
+- **RosEnv (rl_agent.env.ros_env)** - ROS2-based environment
 
 ### 5. **P3O Algorithm** (`rl_agent/algorithms/p3o.py`)
 - **Complete P3O implementation** (Procrastinated Proximal Policy Optimization)

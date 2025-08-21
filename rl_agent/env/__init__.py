@@ -18,13 +18,13 @@ from .px4_env import DeepFlyerEnv, make_deepflyer_env
 try:
     from .vision_processor import create_yolo11_processor
     VISION_AVAILABLE = True
-except ImportError:
+except Exception:
     VISION_AVAILABLE = False
     
 try:
     from .safety_layer import SafetyLayer
     SAFETY_AVAILABLE = True
-except ImportError:
+except Exception:
     SAFETY_AVAILABLE = False
 
 # ROS components (optional) — be resilient to any import errors in ROS stack
@@ -48,10 +48,8 @@ def make_env(env: Optional[Union[str, None]] = None, **kwargs):
     - If env is None or starts with 'DeepFlyer', returns DeepFlyerEnv(**kwargs)
     """
     if isinstance(env, str):
-        # Simple ROS hint fallback: always provide a working local env without ROS
-        if env.lower().startswith('ros:'):
+        if env.lower().startswith('deepflyer'):
             return make_deepflyer_env(**kwargs)
-        # Otherwise assume it's a Gym ID
         return gym.make(env, **kwargs)
     # Default: DeepFlyer environment
     return make_deepflyer_env(**kwargs)
