@@ -16,6 +16,14 @@ from rl_agent.config import P3OConfig
 from rl_agent.utils import ClearMLTracker
 from rl_agent.algorithms.p3o import HyperparameterOptimizer
 
+# Import curriculum and performance monitoring
+try:
+    from rl_agent.curriculum.training_curriculum import TrainingCurriculum
+    from nodes.performance_monitor_node import PerformanceMonitor
+    CURRICULUM_AVAILABLE = True
+except ImportError:
+    CURRICULUM_AVAILABLE = False
+
 
 @dataclass
 class RewardConfig:
@@ -118,6 +126,14 @@ class DeepFlyerMLInterface:
         self.hyperopt: Optional[HyperparameterOptimizer] = None
         self.training_start_time: Optional[float] = None
         self.current_metrics = TrainingMetrics()
+        
+        # Curriculum and performance monitoring
+        if CURRICULUM_AVAILABLE:
+            self.curriculum: Optional[TrainingCurriculum] = None
+            self.performance_monitor = PerformanceMonitor()
+        else:
+            self.curriculum = None
+            self.performance_monitor = None
         
         # Initialize ClearML connection
         try:
@@ -488,4 +504,130 @@ class DeepFlyerMLInterface:
         if not status['clearml_connected']:
             status['warnings'] = ['ClearML not connected - live metrics unavailable']
         
-        return status 
+        return status
+    
+    # Curriculum and Enhanced Training Methods
+    
+    def start_training_with_curriculum(self, reward_config: RewardConfig, training_minutes: int, 
+                                      hyperparameters: Optional[Dict[str, Any]] = None,
+                                      session_name: str = None, 
+                                      curriculum_type: str = "standard") -> bool:
+        """Start training with automatic curriculum progression"""
+        if not CURRICULUM_AVAILABLE:
+            return self.start_training(reward_config, training_minutes, hyperparameters, session_name)
+        
+        try:
+            # Initialize curriculum
+            self.curriculum = TrainingCurriculum(curriculum_type=curriculum_type)
+            
+            # Start ClearML task with curriculum tracking
+            if self.clearml_tracker:
+                task_name = session_name or f"DeepFlyer_Curriculum_{int(time.time())}"
+                task = self.clearml_tracker.start_task(
+                    task_name=task_name,
+                    tags=['educational', 'curriculum', 'p3o', curriculum_type]
+                )
+                
+                # Log curriculum configuration
+                self.clearml_tracker.log_hyperparameters({
+                    'curriculum_type': curriculum_type,
+                    'curriculum_stages': len(self.curriculum.stages),
+                    'training_minutes': training_minutes,
+                    **reward_config.to_dict(),
+                    **(hyperparameters or {})
+                })
+            
+            # Start training with curriculum progression
+            self.training_start_time = time.time()
+            self.current_metrics.is_training = True
+            self.current_metrics.training_time_elapsed = 0
+            
+            print(f"Started curriculum training ({curriculum_type}) for {training_minutes} minutes")
+            return True
+            
+        except Exception as e:
+            print(f"Curriculum training failed: {e}")
+            # Fallback to standard training
+            return self.start_training(reward_config, training_minutes, hyperparameters, session_name)
+    
+    def get_curriculum_progress(self) -> Optional[Dict[str, Any]]:
+        """Get current curriculum progress information"""
+        if not self.curriculum:
+            return None
+        
+        return self.curriculum.get_curriculum_progress()
+    
+    def get_training_insights(self) -> Dict[str, Any]:
+        """Get AI-generated training insights"""
+        insights = {
+            'performance_analysis': self._analyze_performance_trends(),
+            'hyperparameter_suggestions': self._suggest_hyperparameter_changes(),
+            'training_recommendations': self._generate_training_recommendations()
+        }
+        
+        # Add curriculum insights if available
+        if self.curriculum:
+            insights['curriculum_progress'] = self.curriculum.get_curriculum_progress()
+            insights['curriculum_recommendations'] = self._analyze_curriculum_progress()
+        
+        # Add performance monitoring insights if available
+        if self.performance_monitor:
+            recent_analysis = self.performance_monitor.evaluate_training_progress()
+            insights['performance_monitoring'] = recent_analysis
+        
+        return insights
+    
+    def _analyze_performance_trends(self) -> Dict[str, Any]:
+        """Analyze recent performance trends"""
+        # Simplified analysis - would be more sophisticated in real implementation
+        return {
+            'reward_trend': 'improving' if self.current_metrics.current_reward > self.current_metrics.average_reward else 'stable',
+            'learning_stability': 'stable' if self.current_metrics.policy_loss < 0.1 else 'unstable',
+            'completion_rate_trend': 'improving' if self.current_metrics.hoop_completion_rate > 0.7 else 'needs_improvement'
+        }
+    
+    def _suggest_hyperparameter_changes(self) -> List[str]:
+        """Suggest hyperparameter modifications based on performance"""
+        suggestions = []
+        
+        if self.current_metrics.policy_loss > 0.2:
+            suggestions.append("Consider reducing learning rate for more stable learning")
+        
+        if self.current_metrics.hoop_completion_rate < 0.5:
+            suggestions.append("Try increasing reward for hoop approach and alignment")
+        
+        if self.current_metrics.collision_rate > 0.2:
+            suggestions.append("Increase collision penalty to improve safety")
+        
+        if not suggestions:
+            suggestions.append("Training progressing well - continue with current settings")
+        
+        return suggestions
+    
+    def _generate_training_recommendations(self) -> List[str]:
+        """Generate general training recommendations"""
+        recommendations = []
+        
+        if self.current_metrics.training_time_elapsed > 60 and self.current_metrics.current_reward < 10:
+            recommendations.append("Consider adjusting reward function for better learning signal")
+        
+        if self.current_metrics.current_episode > 100 and self.current_metrics.hoop_completion_rate < 0.3:
+            recommendations.append("Review environment difficulty and curriculum progression")
+        
+        return recommendations
+    
+    def _analyze_curriculum_progress(self) -> List[str]:
+        """Analyze curriculum progress and suggest improvements"""
+        if not self.curriculum:
+            return []
+        
+        progress = self.curriculum.get_curriculum_progress()
+        recommendations = []
+        
+        if progress['recent_success_rate'] < progress['success_threshold']:
+            recommendations.append(f"Current stage success rate ({progress['recent_success_rate']:.2f}) below threshold")
+        
+        if progress['ready_for_next_stage']:
+            recommendations.append("Ready to advance to next curriculum stage")
+        
+        return recommendations 

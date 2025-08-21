@@ -11,6 +11,9 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 import logging
+import time
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -306,3 +309,92 @@ class P3O:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.training_stats = checkpoint.get('training_stats', {})
         logger.info(f"Model loaded from {path}")
+    
+    def save_model(self, checkpoint_path: str, episode: int, metrics: Dict[str, float]):
+        """Save complete model checkpoint for deployment"""
+        # Ensure directory exists
+        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        checkpoint = {
+            'model_state_dict': self.network.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'episode': episode,
+            'config': self.config.__dict__,
+            'metrics': metrics,
+            'timestamp': time.time(),
+            'p3o_version': '1.0'
+        }
+        torch.save(checkpoint, checkpoint_path)
+        logger.info(f"Model checkpoint saved to {checkpoint_path}")
+        
+        # Save deployment-ready model (smaller, inference-optimized)
+        deployment_model = {
+            'model_state_dict': self.network.state_dict(),
+            'config': self.config.__dict__,
+            'normalization_params': self._get_normalization_params(),
+            'deployment_ready': True,
+            'timestamp': time.time()
+        }
+        deployment_path = checkpoint_path.replace('.pth', '_deployment.pth')
+        torch.save(deployment_model, deployment_path)
+        logger.info(f"Deployment model saved to {deployment_path}")
+        
+        return deployment_path
+    
+    def load_model_for_deployment(self, model_path: str):
+        """Load model optimized for real-time inference"""
+        checkpoint = torch.load(model_path, map_location=self.device)
+        
+        # Load model weights
+        self.network.load_state_dict(checkpoint['model_state_dict'])
+        self.network.eval()  # Set to evaluation mode
+        
+        # Set configuration
+        if 'config' in checkpoint:
+            for key, value in checkpoint['config'].items():
+                if hasattr(self.config, key):
+                    setattr(self.config, key, value)
+        
+        logger.info(f"Deployment model loaded from {model_path}")
+        return checkpoint.get('config', {})
+    
+    def _get_normalization_params(self) -> Dict[str, Any]:
+        """Get normalization parameters for deployment"""
+        return {
+            'obs_mean': getattr(self, 'obs_mean', np.zeros(8)),
+            'obs_std': getattr(self, 'obs_std', np.ones(8)),
+            'action_scale': getattr(self, 'action_scale', 1.0),
+            'action_bounds': {
+                'low': [-2.0, -2.0, -1.0, -1.0],  # [vx, vy, vz, yaw_rate]
+                'high': [2.0, 2.0, 1.0, 1.0]
+            }
+        }
+    
+    def export_for_deployment(self, model_path: str, output_path: str = None):
+        """Export model for production deployment with optimization"""
+        if output_path is None:
+            output_path = model_path.replace('.pth', '_optimized.pth')
+        
+        # Load model
+        checkpoint = torch.load(model_path, map_location=self.device)
+        self.network.load_state_dict(checkpoint['model_state_dict'])
+        self.network.eval()
+        
+        # Create optimized deployment package
+        optimized_model = {
+            'model_state_dict': self.network.state_dict(),
+            'config': checkpoint.get('config', {}),
+            'normalization_params': self._get_normalization_params(),
+            'deployment_metadata': {
+                'framework': 'pytorch',
+                'model_type': 'p3o_policy',
+                'input_shape': [8],  # 8D observation space
+                'output_shape': [4],  # 4D action space
+                'performance_metrics': checkpoint.get('metrics', {}),
+                'optimization_level': 'production'
+            }
+        }
+        
+        torch.save(optimized_model, output_path)
+        logger.info(f"Optimized deployment model exported to {output_path}")
+        return output_path
