@@ -16,7 +16,7 @@ except ImportError:
     SAFETY_AVAILABLE = False
     
 try:
-    from ..rewards.rewards import HoopNavigationReward, RewardConfig
+    from ..rewards.rewards import reward_function
     REWARDS_AVAILABLE = True
 except Exception:
     REWARDS_AVAILABLE = False
@@ -80,11 +80,8 @@ class DeepFlyerEnv(gym.Env):
         else:
             self.config = None
         
-        # Initialize reward function (optional)
-        if REWARDS_AVAILABLE:
-            self.reward_function = HoopNavigationReward()
-        else:
-            self.reward_function = None
+        # Reward function availability
+        self.use_reward = REWARDS_AVAILABLE
         
         # Initialize safety layer (optional)
         if SAFETY_AVAILABLE and enable_safety:
@@ -143,9 +140,7 @@ class DeepFlyerEnv(gym.Env):
         # Call parent reset (required by Gymnasium)
         super().reset(seed=seed)
         
-        # Reset reward function state (if available)
-        if self.reward_function:
-            self.reward_function.reset_episode()
+        # No stateful reward function to reset
         
         # Reset episode state
         self.current_step = 0
@@ -250,10 +245,22 @@ class DeepFlyerEnv(gym.Env):
         # Get observation
         observation = self._get_obs()
         
-        # Calculate reward (use simple reward if reward function not available)
-        if self.reward_function:
-            state = self._extract_state_for_reward(observation)
-            reward = self.reward_function.compute_reward(state, action)
+        # Calculate reward
+        if self.use_reward:
+            params = {
+                'hoop_detected': bool(observation['hoop_visible']),
+                'hoop_center_x': float(observation['hoop_x_center_norm']),
+                'hoop_center_y': float(observation['hoop_y_center_norm']),
+                'hoop_distance': float(observation['hoop_distance_norm']),
+                'vx_norm': float(observation['drone_vx_norm']),
+                'vy_norm': float(observation['drone_vy_norm']),
+                'vz_norm': float(observation['drone_vz_norm']),
+                'yaw_rate_norm': float(observation['yaw_rate_norm']),
+                'collision': False,
+                'out_of_bounds': False,
+                'hoop_passed': self.hoops_passed > 0,
+            }
+            reward = reward_function(params)
         else:
             # Simple distance-based reward
             reward = -distance_to_target
@@ -262,8 +269,7 @@ class DeepFlyerEnv(gym.Env):
         
         # Build info dict
         info = self._get_info()
-        if self.reward_function:
-            info['reward_components'] = self.reward_function.component_values
+        # No component breakdown in functional reward path
         info['distance_to_target'] = distance_to_target
         info['episode_step'] = self.current_step
         

@@ -306,4 +306,68 @@ def get_reward_preset(name: str) -> RewardConfig:
     return REWARD_PRESETS[name]
 
 
-"""Removed student template function for production readiness."""
+def reward_function(params: Dict[str, Any]) -> float:
+    """
+    DeepRacer-style reward entrypoint.
+
+    Expected params (best-effort; missing keys are handled safely):
+    - hoop_detected: bool
+    - hoop_center_x: float in [-1, 1]
+    - hoop_center_y: float in [-1, 1]
+    - hoop_distance: float in [0, 1] (0=close)
+    - vx_norm, vy_norm, vz_norm, yaw_rate_norm: floats in [-1, 1]
+    - hoop_passed: bool
+    - collision: bool
+    - out_of_bounds: bool
+    """
+    cfg = RewardConfig()
+    total = 0.0
+
+    hoop_detected = bool(params.get('hoop_detected', False))
+    cx = float(params.get('hoop_center_x', 0.0))
+    cy = float(params.get('hoop_center_y', 0.0))
+    dist = float(params.get('hoop_distance', 1.0))
+    vx = float(params.get('vx_norm', 0.0))
+    vy = float(params.get('vy_norm', 0.0))
+    vz = float(params.get('vz_norm', 0.0))
+    yaw_rate = float(params.get('yaw_rate_norm', 0.0))
+
+    # 1) Visual tracking and alignment
+    if hoop_detected:
+        total += cfg.hoop_visible_reward
+        horizontal_reward = cfg.horizontal_alignment_scale * (1.0 - abs(cx))
+        vertical_reward = cfg.vertical_alignment_scale * (1.0 - abs(cy))
+        total += max(horizontal_reward, 0.0)
+        total += max(vertical_reward, 0.0)
+        if abs(cx) < 0.1 and abs(cy) < 0.1:
+            total += cfg.perfect_alignment_bonus
+        # Approach and proximity
+        total += cfg.approach_reward_scale * max(1.0 - dist, 0.0)
+        if dist < cfg.proximity_bonus_threshold:
+            total += cfg.proximity_bonus
+    else:
+        total += cfg.lost_visual_penalty
+
+    # 2) Movement and smoothness
+    forward_speed = max(vx, 0.0)
+    total += cfg.forward_progress_scale * forward_speed
+    speed = (vx**2 + vy**2 + vz**2) ** 0.5
+    if speed < 0.1:
+        total += cfg.hover_penalty
+
+    # 3) Events and penalties
+    if bool(params.get('hoop_passed', False)):
+        total += cfg.hoop_passage_reward
+        if abs(cx) < 0.2 and abs(cy) < 0.2:
+            total += cfg.clean_passage_bonus
+    if bool(params.get('collision', False)):
+        total += cfg.collision_penalty
+    if bool(params.get('out_of_bounds', False)):
+        total += cfg.out_of_bounds_penalty
+    if abs(yaw_rate) > 0.8:
+        total += cfg.excessive_yaw_penalty
+
+    # 4) Time penalty per step
+    total += cfg.time_penalty_per_step
+
+    return float(total)
