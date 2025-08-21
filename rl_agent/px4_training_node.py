@@ -80,7 +80,7 @@ class DeepFlyerTrainingNode(Node):
         self.enable_vision = enable_vision
         if enable_vision:
             self.vision_processor = create_yolo11_processor(
-                model_path="weights/best.pt",  # DeepFlyer custom-trained model
+                model_path="models/yolo/current_best.pt",  # DeepFlyer custom-trained model
                 confidence=self.config.VISION_CONFIG['confidence_threshold']
             )
             self.last_vision_features: Optional[VisionFeatures] = None

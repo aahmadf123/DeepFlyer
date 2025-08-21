@@ -85,8 +85,8 @@ training:
   
   # Checkpointing
   save_frequency: 100  # episodes
-  model_dir: "models"
-  log_dir: "logs"
+  model_dir: "models/p3o"
+  log_dir: "experiments/logs"
   
   # Logging
   log_interval: 10  # episodes

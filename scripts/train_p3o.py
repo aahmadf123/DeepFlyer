@@ -71,8 +71,8 @@ class P3OTrainer:
         
     def setup_directories(self):
         """Create necessary directories"""
-        self.model_dir = Path("models")
-        self.log_dir = Path("logs")
+        self.model_dir = Path("models/p3o")
+        self.log_dir = Path("experiments/logs")
         self.config_dir = Path("config")
         
         for dir_path in [self.model_dir, self.log_dir, self.config_dir]:
