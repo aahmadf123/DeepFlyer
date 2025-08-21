@@ -6,7 +6,7 @@ Provides a stable API over the internal registry in `rl_agent.rewards`.
 
 from typing import List, Dict, Callable
 
-from .rewards import REGISTRY
+from .rewards.rewards import REGISTRY
 
 
 class RewardRegistry:

@@ -1,0 +1,147 @@
+# DeepFlyer P3O Training Configuration
+# This file configures the training parameters for drone racing
+
+# P3O Algorithm Settings
+p3o:
+  learning_rate: 0.0003
+  clip_ratio: 0.2
+  procrastination_factor: 0.95  # Key P3O parameter
+  batch_size: 64
+  num_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  value_loss_coef: 0.5
+  entropy_coef: 0.01
+  max_grad_norm: 0.5
+  action_noise: 0.1
+
+# Direct Control Settings
+control:
+  obs_dim: 8  # [hoop_x, hoop_y, visible, distance, vx, vy, vz, yaw_rate]
+  action_dim: 4  # [vx, vy, vz, yaw_rate]
+  max_velocity: 2.0  # m/s
+  max_yaw_rate: 1.0  # rad/s
+  action_smoothing: 0.8
+  control_frequency: 20.0  # Hz
+
+# Safety Constraints
+safety:
+  min_altitude: 0.3  # meters
+  max_altitude: 3.0  # meters
+  geofence_radius: 5.0  # meters
+  max_acceleration: 5.0  # m/s^2
+  emergency_land_altitude: 0.1  # meters
+
+# ZED Mini Camera Settings
+camera:
+  resolution: "HD720"  # HD720, HD1080, VGA
+  fps: 30
+  depth_mode: "NEURAL"  # NEURAL, QUALITY, PERFORMANCE
+  fov: 90.0  # degrees
+  max_detection_range: 10.0  # meters
+  min_depth: 0.3  # meters
+  max_depth: 10.0  # meters
+
+# Reward Configuration
+reward:
+  # Detection and Alignment
+  hoop_visible_reward: 2.0
+  horizontal_alignment_scale: 10.0
+  vertical_alignment_scale: 10.0
+  perfect_alignment_bonus: 20.0
+  
+  # Approach and Proximity
+  approach_reward_scale: 15.0
+  proximity_bonus_threshold: 0.3
+  proximity_bonus: 30.0
+  
+  # Passage Rewards
+  hoop_passage_reward: 100.0
+  clean_passage_bonus: 50.0
+  
+  # Movement Control
+  forward_progress_scale: 5.0
+  smooth_control_scale: 2.0
+  hover_penalty: -1.0
+  
+  # Penalties
+  collision_penalty: -50.0
+  out_of_bounds_penalty: -30.0
+  excessive_yaw_penalty: -5.0
+  lost_visual_penalty: -3.0
+  time_penalty_per_step: -0.1
+
+# Training Settings
+training:
+  max_episodes: 1000
+  max_steps_per_episode: 500
+  updates_per_episode: 10
+  replay_buffer_size: 10000
+  warmup_steps: 1000
+  
+  # Evaluation
+  eval_frequency: 50  # episodes
+  eval_episodes: 5
+  
+  # Checkpointing
+  save_frequency: 100  # episodes
+  model_dir: "models"
+  log_dir: "logs"
+  
+  # Logging
+  log_interval: 10  # episodes
+  verbose: true
+
+# Course Configuration (5 hoops)
+course:
+  hoops:
+    - position: [5.0, 0.0, 1.5]  # meters [x, y, z]
+      diameter: 0.8  # meters
+      thickness: 0.1  # meters
+    - position: [10.0, 2.0, 1.5]
+      diameter: 0.8
+      thickness: 0.1
+    - position: [15.0, 0.0, 2.0]
+      diameter: 0.8
+      thickness: 0.1
+    - position: [20.0, -2.0, 1.5]
+      diameter: 0.8
+      thickness: 0.1
+    - position: [25.0, 0.0, 1.5]
+      diameter: 0.8
+      thickness: 0.1
+  
+  spawn_position: [0.0, 0.0, 0.0]  # Start position
+  spawn_altitude: 0.8  # meters
+  
+  # Course boundaries
+  boundaries:
+    x_min: -5.0
+    x_max: 30.0
+    y_min: -5.0
+    y_max: 5.0
+    z_min: 0.0
+    z_max: 3.0
+
+# Hardware Configuration
+hardware:
+  drone_model: "HolyBro X500 V2"
+  flight_controller: "Pixhawk 6C"
+  companion_computer: "Raspberry Pi 4B"
+  camera: "ZED Mini"
+  
+  # Communication
+  px4_interface: "PX4-ROS-COM"  # Primary
+  mavros_fallback: false  # Use MAVROS as fallback
+  
+  # Performance
+  companion_cpu_limit: 80  # Percent CPU usage limit
+  companion_memory_limit: 3072  # MB RAM limit
+
+# ClearML Integration
+clearml:
+  enabled: true
+  project_name: "DeepFlyer"
+  task_name: "P3O_Drone_Racing"
+  auto_connect_frameworks: true
+  auto_connect_arg_parser: true

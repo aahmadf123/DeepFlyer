@@ -1,681 +1,388 @@
 """
-ZED Mini Camera Integration for DeepFlyer
-Provides both ROS-based and direct SDK interfaces for stereo camera data
+ZED Mini Stereo Camera Integration for DeepFlyer
+Provides depth perception and visual SLAM capabilities
 """
 
 import numpy as np
 import cv2
-import threading
-import time
-from typing import Optional, Tuple, Dict, Any, Callable
-from dataclasses import dataclass
+from typing import Optional, Tuple, Dict, Any
 from abc import ABC, abstractmethod
 import logging
 
-# ROS2 imports (optional)
-try:
-    import rclpy
-    from rclpy.node import Node
-    from sensor_msgs.msg import Image, CameraInfo
-    from geometry_msgs.msg import PoseStamped
-    from cv_bridge import CvBridge
-    ROS_AVAILABLE = True
-except ImportError:
-    ROS_AVAILABLE = False
-    logging.warning("ROS2 not available. ZED will use direct SDK interface only.")
-
-# ZED SDK imports (optional)
-try:
-    import pyzed.sl as sl
-    ZED_SDK_AVAILABLE = True
-except ImportError:
-    ZED_SDK_AVAILABLE = False
-    logging.warning("ZED SDK not available. ZED will use ROS interface only.")
-
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class ZEDFrame:
-    """Container for ZED camera frame data"""
-    rgb_image: Optional[np.ndarray] = None
-    depth_image: Optional[np.ndarray] = None
-    timestamp: float = 0.0
-    frame_id: int = 0
-    
-    # Intrinsic camera parameters
-    fx: float = 0.0  # Focal length x
-    fy: float = 0.0  # Focal length y
-    cx: float = 0.0  # Principal point x
-    cy: float = 0.0  # Principal point y
-    
-    # Camera pose (if available)
-    position: Optional[np.ndarray] = None
-    orientation: Optional[np.ndarray] = None
-    
-    # Quality metrics
-    confidence: float = 0.0
-    processing_time_ms: float = 0.0
+# Try to import ZED SDK
+try:
+    import pyzed.sl as sl
+    ZED_AVAILABLE = True
+except ImportError:
+    ZED_AVAILABLE = False
+    logger.warning("ZED SDK not available, using mock interface")
 
 
 class ZEDInterface(ABC):
-    """Abstract base class for ZED camera interfaces"""
+    """Abstract base class for ZED camera interface"""
     
     @abstractmethod
-    def start(self) -> bool:
-        """Start the camera interface"""
+    def initialize(self) -> bool:
+        """Initialize camera"""
         pass
     
     @abstractmethod
-    def stop(self) -> None:
-        """Stop the camera interface"""
+    def grab_frame(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """Grab RGB and depth frames"""
         pass
     
     @abstractmethod
-    def get_frame(self) -> Optional[ZEDFrame]:
-        """Get the latest camera frame"""
+    def get_depth_at_point(self, x: int, y: int) -> float:
+        """Get depth value at specific pixel"""
         pass
     
     @abstractmethod
-    def is_connected(self) -> bool:
-        """Check if camera is connected and working"""
+    def close(self):
+        """Close camera connection"""
         pass
 
 
-class ROSZEDInterface(ZEDInterface):
-    """ROS2-based interface to ZED Mini camera using zed-ros2-wrapper"""
+class ZEDMiniCamera(ZEDInterface):
+    """ZED Mini stereo camera implementation"""
     
-    def __init__(self, 
-                 node: Optional[Node] = None,
-                 namespace: str = "/zed_mini",
-                 rgb_topic: str = "/zed_node/rgb/image_rect_color",
-                 depth_topic: str = "/zed_node/depth/depth_registered",
-                 camera_info_topic: str = "/zed_node/rgb/camera_info",
-                 pose_topic: str = "/zed_node/pose",
-                 frame_timeout: float = 1.0):
+    def __init__(self, resolution: str = "HD720", fps: int = 30, depth_mode: str = "NEURAL"):
         """
-        Initialize ROS-based ZED interface
+        Initialize ZED Mini camera
         
         Args:
-            node: ROS2 node for subscriptions (if None, creates internal node)
-            namespace: ZED camera namespace
-            rgb_topic: RGB image topic name
-            depth_topic: Depth image topic name  
-            camera_info_topic: Camera info topic name
-            pose_topic: Camera pose topic name
-            frame_timeout: Timeout for frame freshness (seconds)
+            resolution: Resolution mode (HD720, HD1080, VGA)
+            fps: Frames per second (15, 30, 60)
+            depth_mode: Depth computation mode (NEURAL, QUALITY, PERFORMANCE)
         """
-        if not ROS_AVAILABLE:
-            raise RuntimeError("ROS2 not available. Cannot use ROSZEDInterface.")
+        self.resolution = resolution
+        self.fps = fps
+        self.depth_mode = depth_mode
+        self.camera = None
+        self.runtime_params = None
+        self.image = None
+        self.depth = None
+        self.point_cloud = None
         
-        self.namespace = namespace
-        self.frame_timeout = frame_timeout
-        
-        # Create or use provided node
-        if node is None:
-            rclpy.init()
-            self.node = Node('zed_interface_node')
-            self.owns_node = True
-        else:
-            self.node = node
-            self.owns_node = False
-        
-        # Topic names
-        self.rgb_topic = f"{namespace}{rgb_topic}"
-        self.depth_topic = f"{namespace}{depth_topic}"
-        self.camera_info_topic = f"{namespace}{camera_info_topic}"
-        self.pose_topic = f"{namespace}{pose_topic}"
-        
-        # CV Bridge for image conversion
-        self.cv_bridge = CvBridge()
-        
-        # Data storage
-        self.latest_frame = ZEDFrame()
-        self.camera_info = None
-        self.frame_lock = threading.Lock()
-        
-        # Subscribers
-        self.rgb_sub = None
-        self.depth_sub = None
-        self.camera_info_sub = None
-        self.pose_sub = None
-        
-        # Connection status
-        self._connected = False
-        self._last_rgb_time = 0.0
-        self._last_depth_time = 0.0
-        
-        logger.info(f"ROSZEDInterface initialized with namespace: {namespace}")
+        if not ZED_AVAILABLE:
+            raise RuntimeError("ZED SDK not installed")
     
-    def start(self) -> bool:
-        """Start ROS subscriptions to ZED topics"""
+    def initialize(self) -> bool:
+        """Initialize ZED Mini camera"""
         try:
-            # Create subscribers
-            self.rgb_sub = self.node.create_subscription(
-                Image, self.rgb_topic, self._rgb_callback, 10)
+            self.camera = sl.Camera()
             
-            self.depth_sub = self.node.create_subscription(
-                Image, self.depth_topic, self._depth_callback, 10)
+            # Set initialization parameters
+            init_params = sl.InitParameters()
             
-            self.camera_info_sub = self.node.create_subscription(
-                CameraInfo, self.camera_info_topic, self._camera_info_callback, 10)
-            
-            self.pose_sub = self.node.create_subscription(
-                PoseStamped, self.pose_topic, self._pose_callback, 10)
-            
-            # Start ROS spinning in separate thread
-            self.ros_thread = threading.Thread(target=self._ros_spin_thread, daemon=True)
-            self.ros_thread.start()
-            
-            # Wait for first frame
-            start_time = time.time()
-            while time.time() - start_time < 5.0:  # 5 second timeout
-                if self._connected:
-                    break
-                time.sleep(0.1)
-            
-            if self._connected:
-                logger.info("ZED ROS interface started successfully")
-                return True
+            # Set resolution
+            if self.resolution == "HD720":
+                init_params.camera_resolution = sl.RESOLUTION.HD720
+            elif self.resolution == "HD1080":
+                init_params.camera_resolution = sl.RESOLUTION.HD1080
             else:
-                logger.error("Failed to receive ZED data within timeout")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Failed to start ZED ROS interface: {e}")
-            return False
-    
-    def stop(self) -> None:
-        """Stop ROS subscriptions"""
-        self._connected = False
-        
-        # Destroy subscribers
-        if self.rgb_sub:
-            self.node.destroy_subscription(self.rgb_sub)
-        if self.depth_sub:
-            self.node.destroy_subscription(self.depth_sub)
-        if self.camera_info_sub:
-            self.node.destroy_subscription(self.camera_info_sub)
-        if self.pose_sub:
-            self.node.destroy_subscription(self.pose_sub)
-        
-        # Cleanup node if we own it
-        if self.owns_node:
-            self.node.destroy_node()
-            rclpy.shutdown()
-        
-        logger.info("ZED ROS interface stopped")
-    
-    def get_frame(self) -> Optional[ZEDFrame]:
-        """Get the latest synchronized frame"""
-        with self.frame_lock:
-            current_time = time.time()
+                init_params.camera_resolution = sl.RESOLUTION.VGA
             
-            # Check frame freshness
-            if (current_time - self._last_rgb_time > self.frame_timeout or
-                current_time - self._last_depth_time > self.frame_timeout):
-                return None
+            # Set FPS
+            init_params.camera_fps = self.fps
             
-            # Return copy of latest frame
-            if self.latest_frame.rgb_image is not None and self.latest_frame.depth_image is not None:
-                return ZEDFrame(
-                    rgb_image=self.latest_frame.rgb_image.copy(),
-                    depth_image=self.latest_frame.depth_image.copy(),
-                    timestamp=self.latest_frame.timestamp,
-                    frame_id=self.latest_frame.frame_id,
-                    fx=self.latest_frame.fx,
-                    fy=self.latest_frame.fy,
-                    cx=self.latest_frame.cx,
-                    cy=self.latest_frame.cy,
-                    position=self.latest_frame.position,
-                    orientation=self.latest_frame.orientation,
-                    confidence=self.latest_frame.confidence,
-                    processing_time_ms=self.latest_frame.processing_time_ms
-                )
+            # Set depth mode
+            if self.depth_mode == "NEURAL":
+                init_params.depth_mode = sl.DEPTH_MODE.NEURAL
+            elif self.depth_mode == "QUALITY":
+                init_params.depth_mode = sl.DEPTH_MODE.QUALITY
+            else:
+                init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE
             
-            return None
-    
-    def is_connected(self) -> bool:
-        """Check if receiving fresh data from ZED"""
-        current_time = time.time()
-        return (self._connected and 
-                current_time - self._last_rgb_time < self.frame_timeout and
-                current_time - self._last_depth_time < self.frame_timeout)
-    
-    def _rgb_callback(self, msg: Image) -> None:
-        """Process RGB image messages"""
-        try:
-            start_time = time.time()
+            # Set coordinate system
+            init_params.coordinate_units = sl.UNIT.METER
+            init_params.coordinate_system = sl.COORDINATE_SYSTEM.RIGHT_HANDED_Y_UP
             
-            # Convert ROS image to OpenCV
-            cv_image = self.cv_bridge.imgmsg_to_cv2(msg, "bgr8")
+            # Enable depth computation
+            init_params.depth_minimum_distance = 0.3  # 30cm minimum
+            init_params.depth_maximum_distance = 10.0  # 10m maximum
             
-            with self.frame_lock:
-                self.latest_frame.rgb_image = cv_image
-                self.latest_frame.timestamp = time.time()
-                self.latest_frame.frame_id = msg.header.seq if hasattr(msg.header, 'seq') else 0
-                self.latest_frame.processing_time_ms = (time.time() - start_time) * 1000
-                
-                self._last_rgb_time = time.time()
-                self._connected = True
-                
-        except Exception as e:
-            logger.warning(f"Failed to process RGB image: {e}")
-    
-    def _depth_callback(self, msg: Image) -> None:
-        """Process depth image messages"""
-        try:
-            # Convert ROS depth image to OpenCV (usually 32FC1)
-            cv_depth = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
-            
-            with self.frame_lock:
-                self.latest_frame.depth_image = cv_depth
-                self._last_depth_time = time.time()
-                
-        except Exception as e:
-            logger.warning(f"Failed to process depth image: {e}")
-    
-    def _camera_info_callback(self, msg: CameraInfo) -> None:
-        """Process camera calibration info"""
-        self.camera_info = msg
-        
-        with self.frame_lock:
-            # Extract intrinsic parameters
-            self.latest_frame.fx = msg.k[0]  # K[0,0]
-            self.latest_frame.fy = msg.k[4]  # K[1,1] 
-            self.latest_frame.cx = msg.k[2]  # K[0,2]
-            self.latest_frame.cy = msg.k[5]  # K[1,2]
-    
-    def _pose_callback(self, msg: PoseStamped) -> None:
-        """Process camera pose messages"""
-        with self.frame_lock:
-            # Extract position
-            self.latest_frame.position = np.array([
-                msg.pose.position.x,
-                msg.pose.position.y, 
-                msg.pose.position.z
-            ])
-            
-            # Extract orientation (quaternion)
-            self.latest_frame.orientation = np.array([
-                msg.pose.orientation.w,
-                msg.pose.orientation.x,
-                msg.pose.orientation.y,
-                msg.pose.orientation.z
-            ])
-    
-    def _ros_spin_thread(self) -> None:
-        """ROS spinning thread"""
-        try:
-            rclpy.spin(self.node)
-        except Exception as e:
-            logger.error(f"ROS spin thread error: {e}")
-
-
-class DirectZEDInterface(ZEDInterface):
-    """Direct ZED SDK interface for maximum performance"""
-    
-    def __init__(self,
-                 camera_id: int = 0,
-                 resolution: str = "HD720",  # HD720, HD1080, VGA
-                 fps: int = 60,
-                 depth_mode: str = "PERFORMANCE",  # PERFORMANCE, MEDIUM, QUALITY
-                 coordinate_system: str = "RIGHT_HANDED_Z_UP",
-                 enable_tracking: bool = True,
-                 enable_depth: bool = True):
-        """
-        Initialize direct ZED SDK interface
-        
-        Args:
-            camera_id: Camera ID (0 for first camera)
-            resolution: Camera resolution setting
-            fps: Target frame rate
-            depth_mode: Depth computation quality
-            coordinate_system: Coordinate system for pose
-            enable_tracking: Enable positional tracking
-            enable_depth: Enable depth computation
-        """
-        if not ZED_SDK_AVAILABLE:
-            raise RuntimeError("ZED SDK not available. Cannot use DirectZEDInterface.")
-        
-        self.camera_id = camera_id
-        self.enable_tracking = enable_tracking
-        self.enable_depth = enable_depth
-        
-        # Create ZED camera object
-        self.zed = sl.Camera()
-        
-        # Create initialization parameters
-        self.init_params = sl.InitParameters()
-        self.init_params.camera_resolution = getattr(sl.RESOLUTION, resolution)
-        self.init_params.camera_fps = fps
-        self.init_params.depth_mode = getattr(sl.DEPTH_MODE, depth_mode)
-        self.init_params.coordinate_units = sl.UNIT.METER
-        self.init_params.coordinate_system = getattr(sl.COORDINATE_SYSTEM, coordinate_system)
-        self.init_params.enable_image_enhancement = True
-        
-        # Runtime parameters
-        self.runtime_params = sl.RuntimeParameters()
-        self.runtime_params.sensing_mode = sl.SENSING_MODE.STANDARD
-        
-        # Tracking parameters
-        if enable_tracking:
-            self.tracking_params = sl.PositionalTrackingParameters()
-            self.tracking_params.enable_area_memory = True
-            self.tracking_params.enable_pose_smoothing = True
-        
-        # Image containers
-        self.rgb_sl = sl.Mat()
-        self.depth_sl = sl.Mat()
-        self.pose_sl = sl.Pose()
-        
-        # Status tracking
-        self._connected = False
-        self._frame_count = 0
-        
-        logger.info(f"DirectZEDInterface initialized with resolution: {resolution}, FPS: {fps}")
-    
-    def start(self) -> bool:
-        """Start ZED camera"""
-        try:
             # Open camera
-            status = self.zed.open(self.init_params)
-            if status != sl.ERROR_CODE.SUCCESS:
-                logger.error(f"Failed to open ZED camera: {status}")
+            err = self.camera.open(init_params)
+            if err != sl.ERROR_CODE.SUCCESS:
+                logger.error(f"Failed to open ZED camera: {err}")
                 return False
             
-            # Enable positional tracking if requested
-            if self.enable_tracking:
-                status = self.zed.enable_positional_tracking(self.tracking_params)
-                if status != sl.ERROR_CODE.SUCCESS:
-                    logger.warning(f"Failed to enable tracking: {status}")
-                    # Continue without tracking
+            # Create runtime parameters
+            self.runtime_params = sl.RuntimeParameters()
+            self.runtime_params.sensing_mode = sl.SENSING_MODE.STANDARD
             
-            # Get camera information
-            self.camera_info = self.zed.get_camera_information()
-            self._connected = True
+            # Initialize data containers
+            self.image = sl.Mat()
+            self.depth = sl.Mat()
+            self.point_cloud = sl.Mat()
             
-            logger.info("ZED camera started successfully")
-            logger.info(f"Camera model: {self.camera_info.camera_model}")
-            logger.info(f"Serial number: {self.camera_info.serial_number}")
-            
+            logger.info(f"ZED Mini initialized: {self.resolution} @ {self.fps}fps")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to start ZED camera: {e}")
+            logger.error(f"ZED initialization failed: {e}")
             return False
     
-    def stop(self) -> None:
-        """Stop ZED camera"""
-        if self._connected:
-            if self.enable_tracking:
-                self.zed.disable_positional_tracking()
-            self.zed.close()
-            self._connected = False
-            logger.info("ZED camera stopped")
-    
-    def get_frame(self) -> Optional[ZEDFrame]:
-        """Capture and return latest frame"""
-        if not self._connected:
-            return None
-        
-        try:
-            start_time = time.time()
-            
-            # Grab frame
-            status = self.zed.grab(self.runtime_params)
-            if status != sl.ERROR_CODE.SUCCESS:
-                return None
-            
-            # Retrieve images
-            self.zed.retrieve_image(self.rgb_sl, sl.VIEW.LEFT)
-            
-            if self.enable_depth:
-                self.zed.retrieve_measure(self.depth_sl, sl.MEASURE.DEPTH)
-            
-            # Get pose if tracking enabled
-            pose_data = None
-            orientation_data = None
-            if self.enable_tracking:
-                tracking_state = self.zed.get_position(self.pose_sl)
-                if tracking_state == sl.POSITIONAL_TRACKING_STATE.OK:
-                    translation = self.pose_sl.get_translation()
-                    rotation = self.pose_sl.get_rotation_matrix()
-                    pose_data = np.array([translation.get()[0], translation.get()[1], translation.get()[2]])
-                    
-                    # Convert rotation matrix to quaternion
-                    orientation_data = self._rotation_matrix_to_quaternion(rotation.r)
-            
-            # Convert to numpy arrays
-            rgb_np = self.rgb_sl.get_data()[:, :, :3]  # Remove alpha channel
-            rgb_np = cv2.cvtColor(rgb_np, cv2.COLOR_RGBA2BGR)
-            
-            depth_np = None
-            if self.enable_depth:
-                depth_np = self.depth_sl.get_data()
-            
-            # Get camera intrinsics
-            calibration = self.camera_info.camera_configuration.calibration_parameters.left_cam
-            
-            # Create frame object
-            frame = ZEDFrame(
-                rgb_image=rgb_np,
-                depth_image=depth_np,
-                timestamp=time.time(),
-                frame_id=self._frame_count,
-                fx=calibration.fx,
-                fy=calibration.fy,
-                cx=calibration.cx,
-                cy=calibration.cy,
-                position=pose_data,
-                orientation=orientation_data,
-                confidence=1.0,  # ZED provides high confidence data
-                processing_time_ms=(time.time() - start_time) * 1000
-            )
-            
-            self._frame_count += 1
-            return frame
-            
-        except Exception as e:
-            logger.warning(f"Failed to capture ZED frame: {e}")
-            return None
-    
-    def is_connected(self) -> bool:
-        """Check if camera is connected"""
-        return self._connected
-    
-    def _rotation_matrix_to_quaternion(self, R: np.ndarray) -> np.ndarray:
-        """Convert 3x3 rotation matrix to quaternion [w, x, y, z]"""
-        trace = np.trace(R)
-        
-        if trace > 0:
-            s = np.sqrt(trace + 1.0) * 2  # s = 4 * qw
-            w = 0.25 * s
-            x = (R[2, 1] - R[1, 2]) / s
-            y = (R[0, 2] - R[2, 0]) / s  
-            z = (R[1, 0] - R[0, 1]) / s
-        elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
-            s = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2  # s = 4 * qx
-            w = (R[2, 1] - R[1, 2]) / s
-            x = 0.25 * s
-            y = (R[0, 1] + R[1, 0]) / s
-            z = (R[0, 2] + R[2, 0]) / s
-        elif R[1, 1] > R[2, 2]:
-            s = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2  # s = 4 * qy
-            w = (R[0, 2] - R[2, 0]) / s
-            x = (R[0, 1] + R[1, 0]) / s
-            y = 0.25 * s
-            z = (R[1, 2] + R[2, 1]) / s
-        else:
-            s = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2  # s = 4 * qz
-            w = (R[1, 0] - R[0, 1]) / s
-            x = (R[0, 2] + R[2, 0]) / s
-            y = (R[1, 2] + R[2, 1]) / s
-            z = 0.25 * s
-        
-        return np.array([w, x, y, z])
-
-
-class MockZEDInterface(ZEDInterface):
-    """Mock ZED interface for testing without hardware"""
-    
-    def __init__(self, 
-                 width: int = 1280,
-                 height: int = 720,
-                 fps: int = 30,
-                 generate_synthetic_hoops: bool = True):
+    def grab_frame(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
-        Initialize mock ZED interface
+        Grab RGB and depth frames from ZED Mini
+        
+        Returns:
+            rgb_image: RGB image as numpy array
+            depth_map: Depth map as numpy array (meters)
+        """
+        if self.camera is None:
+            return None, None
+        
+        # Grab new frame
+        if self.camera.grab(self.runtime_params) == sl.ERROR_CODE.SUCCESS:
+            # Retrieve RGB image
+            self.camera.retrieve_image(self.image, sl.VIEW.LEFT)
+            rgb_image = self.image.get_data()[:, :, :3]  # Remove alpha channel
+            
+            # Retrieve depth map
+            self.camera.retrieve_measure(self.depth, sl.MEASURE.DEPTH)
+            depth_map = self.depth.get_data()
+            
+            return rgb_image, depth_map
+        
+        return None, None
+    
+    def get_depth_at_point(self, x: int, y: int) -> float:
+        """
+        Get depth value at specific pixel coordinate
         
         Args:
-            width: Image width
-            height: Image height  
-            fps: Simulated frame rate
-            generate_synthetic_hoops: Whether to generate synthetic hoop images
+            x: X coordinate in image
+            y: Y coordinate in image
+        
+        Returns:
+            Depth in meters
         """
-        self.width = width
-        self.height = height
-        self.fps = fps
-        self.generate_synthetic_hoops = generate_synthetic_hoops
+        if self.depth is None:
+            return -1.0
         
-        self._connected = False
-        self._frame_count = 0
-        self._start_time = 0.0
+        depth_value = self.depth.get_value(x, y)[1]  # Get depth value
+        if np.isnan(depth_value) or np.isinf(depth_value):
+            return -1.0
         
-        # Synthetic camera parameters
-        self.fx = width * 0.8
-        self.fy = height * 0.8
-        self.cx = width / 2.0
-        self.cy = height / 2.0
+        return depth_value
+    
+    def get_3d_position(self, x: int, y: int) -> Optional[np.ndarray]:
+        """
+        Get 3D position of a pixel in camera coordinates
         
-        logger.info(f"MockZEDInterface initialized: {width}x{height}@{fps}fps")
-    
-    def start(self) -> bool:
-        """Start mock camera"""
-        self._connected = True
-        self._start_time = time.time()
-        logger.info("Mock ZED camera started")
-        return True
-    
-    def stop(self) -> None:
-        """Stop mock camera"""
-        self._connected = False
-        logger.info("Mock ZED camera stopped")
-    
-    def get_frame(self) -> Optional[ZEDFrame]:
-        """Generate synthetic frame"""
-        if not self._connected:
+        Args:
+            x: X coordinate in image
+            y: Y coordinate in image
+        
+        Returns:
+            3D position [x, y, z] in meters
+        """
+        if self.camera is None:
             return None
         
-        start_time = time.time()
+        # Retrieve point cloud
+        self.camera.retrieve_measure(self.point_cloud, sl.MEASURE.XYZRGBA)
         
-        # Generate synthetic RGB image
-        rgb_image = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-        rgb_image[:] = (100, 150, 200)  # Sky blue background
+        # Get 3D point
+        point_3d = self.point_cloud.get_value(x, y)[1][:3]
         
-        # Generate synthetic depth (distance increases with height)
-        depth_image = np.ones((self.height, self.width), dtype=np.float32)
-        for y in range(self.height):
-            depth_image[y, :] = 2.0 + (y / self.height) * 3.0  # 2-5 meter range
+        if np.any(np.isnan(point_3d)) or np.any(np.isinf(point_3d)):
+            return None
         
-        # Add synthetic hoop if requested
-        if self.generate_synthetic_hoops:
-            self._add_synthetic_hoop(rgb_image, depth_image)
+        return point_3d
+    
+    def get_camera_pose(self) -> Optional[Dict[str, np.ndarray]]:
+        """
+        Get camera pose from visual-inertial tracking
         
-        # Generate synthetic pose (simple circular motion)
-        elapsed_time = time.time() - self._start_time
-        radius = 1.0
-        pose = np.array([
-            radius * np.cos(elapsed_time * 0.1),
-            radius * np.sin(elapsed_time * 0.1),
-            0.8  # Fixed altitude
-        ])
+        Returns:
+            Dictionary with 'position' and 'orientation'
+        """
+        if self.camera is None:
+            return None
         
-        orientation = np.array([1.0, 0.0, 0.0, 0.0])  # Identity quaternion
+        # Enable positional tracking if not enabled
+        if not self.camera.is_position_tracking_enabled():
+            tracking_params = sl.PositionalTrackingParameters()
+            self.camera.enable_positional_tracking(tracking_params)
         
-        frame = ZEDFrame(
-            rgb_image=rgb_image,
-            depth_image=depth_image,
-            timestamp=time.time(),
-            frame_id=self._frame_count,
-            fx=self.fx,
-            fy=self.fy,
-            cx=self.cx,
-            cy=self.cy,
-            position=pose,
-            orientation=orientation,
-            confidence=0.9,
-            processing_time_ms=(time.time() - start_time) * 1000
+        # Get pose
+        zed_pose = sl.Pose()
+        if self.camera.get_position(zed_pose, sl.REFERENCE_FRAME.WORLD) == sl.TRACKING_STATE.OK:
+            position = zed_pose.get_translation().get()
+            orientation = zed_pose.get_orientation().get()
+            
+            return {
+                'position': np.array([position[0], position[1], position[2]]),
+                'orientation': np.array([orientation[0], orientation[1], 
+                                        orientation[2], orientation[3]])
+            }
+        
+        return None
+    
+    def close(self):
+        """Close ZED camera connection"""
+        if self.camera is not None:
+            self.camera.close()
+            self.camera = None
+            logger.info("ZED Mini camera closed")
+
+
+class MockZEDCamera(ZEDInterface):
+    """Mock ZED camera for testing without hardware"""
+    
+    def __init__(self, resolution: str = "HD720", fps: int = 30, depth_mode: str = "NEURAL"):
+        self.resolution = resolution
+        self.fps = fps
+        self.depth_mode = depth_mode
+        self.initialized = False
+        
+        # Image dimensions
+        if resolution == "HD720":
+            self.width, self.height = 1280, 720
+        elif resolution == "HD1080":
+            self.width, self.height = 1920, 1080
+        else:
+            self.width, self.height = 640, 480
+    
+    def initialize(self) -> bool:
+        """Initialize mock camera"""
+        self.initialized = True
+        logger.info(f"Mock ZED camera initialized: {self.resolution} @ {self.fps}fps")
+        return True
+    
+    def grab_frame(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """Generate mock RGB and depth frames"""
+        if not self.initialized:
+            return None, None
+        
+        # Generate mock RGB image (random noise for now)
+        rgb_image = np.random.randint(0, 255, (self.height, self.width, 3), dtype=np.uint8)
+        
+        # Generate mock depth map (gradient from center)
+        y, x = np.ogrid[:self.height, :self.width]
+        center_x, center_y = self.width / 2, self.height / 2
+        depth_map = np.sqrt((x - center_x)**2 + (y - center_y)**2) / 500.0 + 1.0
+        depth_map = depth_map.astype(np.float32)
+        
+        return rgb_image, depth_map
+    
+    def get_depth_at_point(self, x: int, y: int) -> float:
+        """Get mock depth value"""
+        if not self.initialized:
+            return -1.0
+        
+        # Simple distance from center
+        center_x, center_y = self.width / 2, self.height / 2
+        distance = np.sqrt((x - center_x)**2 + (y - center_y)**2) / 500.0 + 1.0
+        return float(distance)
+    
+    def close(self):
+        """Close mock camera"""
+        self.initialized = False
+        logger.info("Mock ZED camera closed")
+
+
+class ZEDROSInterface(ZEDInterface):
+    """ZED camera interface via ROS2 topics"""
+    
+    def __init__(self, node, namespace: str = "zed_mini"):
+        """
+        Initialize ZED ROS interface
+        
+        Args:
+            node: ROS2 node instance
+            namespace: ROS2 namespace for ZED topics
+        """
+        self.node = node
+        self.namespace = namespace
+        self.rgb_image = None
+        self.depth_map = None
+        
+        # Import ROS dependencies
+        from sensor_msgs.msg import Image
+        from cv_bridge import CvBridge
+        
+        self.bridge = CvBridge()
+        
+        # Subscribe to topics
+        self.rgb_sub = node.create_subscription(
+            Image,
+            f'/{namespace}/zed_node/rgb/image_rect_color',
+            self._rgb_callback,
+            10
         )
         
-        self._frame_count += 1
-        
-        # Simulate frame rate
-        time.sleep(1.0 / self.fps)
-        
-        return frame
+        self.depth_sub = node.create_subscription(
+            Image,
+            f'/{namespace}/zed_node/depth/depth_registered',
+            self._depth_callback,
+            10
+        )
     
-    def is_connected(self) -> bool:
-        """Check mock connection status"""
-        return self._connected
+    def _rgb_callback(self, msg):
+        """Process RGB image from ROS"""
+        try:
+            self.rgb_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        except Exception as e:
+            logger.error(f"Failed to process RGB image: {e}")
     
-    def _add_synthetic_hoop(self, rgb_image: np.ndarray, depth_image: np.ndarray) -> None:
-        """Add synthetic hoop to images"""
-        # Simple circle in center of image
-        center_x = self.width // 2 + int(50 * np.sin(time.time()))  # Slight movement
-        center_y = self.height // 2
-        radius = 80
+    def _depth_callback(self, msg):
+        """Process depth map from ROS"""
+        try:
+            self.depth_map = self.bridge.imgmsg_to_cv2(msg, "32FC1")
+        except Exception as e:
+            logger.error(f"Failed to process depth map: {e}")
+    
+    def initialize(self) -> bool:
+        """Initialize ROS interface"""
+        logger.info(f"ZED ROS interface initialized on namespace: {self.namespace}")
+        return True
+    
+    def grab_frame(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """Get latest frames from ROS topics"""
+        return self.rgb_image, self.depth_map
+    
+    def get_depth_at_point(self, x: int, y: int) -> float:
+        """Get depth at point from last depth map"""
+        if self.depth_map is None:
+            return -1.0
         
-        # Draw hoop on RGB image
-        cv2.circle(rgb_image, (center_x, center_y), radius, (255, 100, 0), 8)
-        cv2.circle(rgb_image, (center_x, center_y), radius - 15, (255, 150, 50), 3)
+        if 0 <= y < self.depth_map.shape[0] and 0 <= x < self.depth_map.shape[1]:
+            return float(self.depth_map[y, x])
         
-        # Create depth hole for hoop
-        cv2.circle(depth_image, (center_x, center_y), radius - 10, 3.0, -1)
+        return -1.0
+    
+    def close(self):
+        """Close ROS interface"""
+        # ROS subscriptions are cleaned up automatically
+        pass
 
 
-def create_zed_interface(interface_type: str = "auto", **kwargs) -> ZEDInterface:
+def create_zed_interface(mode: str = "direct", **kwargs) -> ZEDInterface:
     """
     Factory function to create appropriate ZED interface
     
     Args:
-        interface_type: "ros", "direct", "mock", or "auto"
-        **kwargs: Interface-specific arguments
-        
+        mode: Interface mode ("direct", "ros", "mock")
+        **kwargs: Additional arguments for the interface
+    
     Returns:
-        ZEDInterface instance
+        ZED interface instance
     """
-    if interface_type == "ros":
-        if not ROS_AVAILABLE:
-            raise RuntimeError("ROS2 not available for ZED interface")
-        return ROSZEDInterface(**kwargs)
-    
-    elif interface_type == "direct":
-        if not ZED_SDK_AVAILABLE:
-            raise RuntimeError("ZED SDK not available for direct interface")
-        return DirectZEDInterface(**kwargs)
-    
-    elif interface_type == "mock":
-        return MockZEDInterface(**kwargs)
-    
-    elif interface_type == "auto":
-        # Auto-select best available interface
-        if ZED_SDK_AVAILABLE:
-            logger.info("Auto-selecting DirectZEDInterface")
-            return DirectZEDInterface(**kwargs)
-        elif ROS_AVAILABLE:
-            logger.info("Auto-selecting ROSZEDInterface")
-            return ROSZEDInterface(**kwargs)
+    if mode == "direct":
+        if ZED_AVAILABLE:
+            return ZEDMiniCamera(**kwargs)
         else:
-            logger.info("Auto-selecting MockZEDInterface")
-            return MockZEDInterface(**kwargs)
-    
+            logger.warning("ZED SDK not available, using mock interface")
+            return MockZEDCamera(**kwargs)
+    elif mode == "ros":
+        return ZEDROSInterface(**kwargs)
+    elif mode == "mock":
+        return MockZEDCamera(**kwargs)
     else:
-        raise ValueError(f"Unknown interface type: {interface_type}")
-
-
-# Export main classes and functions
-__all__ = [
-    'ZEDFrame', 'ZEDInterface', 'ROSZEDInterface', 
-    'DirectZEDInterface', 'MockZEDInterface', 'create_zed_interface'
-] 
+        raise ValueError(f"Unknown ZED interface mode: {mode}")

@@ -425,7 +425,7 @@ class RLAgentNode(Node):
         }
         
         # Import and call DeepRacer-style reward function
-        from rl_agent.rewards import reward_function
+        from rl_agent.rewards.rewards import reward_function
         reward = reward_function(params)
         
         # Store for training

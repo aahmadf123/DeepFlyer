@@ -21,7 +21,7 @@ import logging
 
 # RL agent imports
 from rl_agent.config import DeepFlyerConfig
-from rl_agent.rewards import HoopRewardFunction, HoopRewardConfig
+from rl_agent.rewards.rewards import HoopRewardFunction, HoopRewardConfig
 
 logger = logging.getLogger(__name__)
 

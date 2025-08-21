@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from rl_agent.rewards import (
+from rl_agent.rewards.rewards import (
     follow_trajectory_reward,
     heading_error_reward,
     create_cross_track_and_heading_reward,

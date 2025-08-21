@@ -16,7 +16,7 @@ except ImportError:
     SAFETY_AVAILABLE = False
     
 try:
-    from ..rewards import HoopRewardFunction, HoopRewardConfig
+    from ..rewards.rewards import HoopRewardFunction, HoopRewardConfig
     REWARDS_AVAILABLE = True
 except ImportError:
     REWARDS_AVAILABLE = False
