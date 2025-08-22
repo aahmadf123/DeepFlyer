@@ -26,9 +26,128 @@ class HoopDetection:
     alignment: float  # -1.0 (left) to 1.0 (right), 0.0 = centered
     size_ratio: float  # bbox area / image area
 
+@dataclass 
+class EnhancedHoopDetection(HoopDetection):
+    """Enhanced hoop detection with comprehensive depth information"""
+    distance_confidence: float  # Confidence in distance measurement (0.0-1.0)
+    spatial_consistency: float  # How uniform the depth is across the hoop (0.0-1.0)  
+    passable: bool             # Whether the hoop appears passable (no obstacles)
+    obstacle_map: Optional[np.ndarray]  # Local obstacle map for navigation
+    depth_std: float           # Standard deviation of depth measurements
+    valid_pixel_ratio: float   # Ratio of valid depth pixels in detection
+
+
+class EnhancedDepthProcessor:
+    """Enhanced depth processing for YOLO11 detections with comprehensive spatial analysis"""
+    
+    def __init__(self):
+        # Depth processing parameters
+        self.depth_filter_kernel = 5  # For noise reduction
+        self.min_valid_depth = 0.3    # meters
+        self.max_valid_depth = 10.0   # meters
+        
+        # Spatial analysis parameters
+        self.hoop_diameter = 1.2      # meters (approximate)
+        self.safety_margin = 0.5      # meters
+        
+    def process_depth_for_detection(self, depth_map: np.ndarray, 
+                                  bbox: Tuple[int, int, int, int]) -> Dict[str, float]:
+        """
+        Process depth information within a bounding box
+        
+        Args:
+            depth_map: Depth map in meters
+            bbox: Bounding box (x1, y1, x2, y2)
+            
+        Returns:
+            Dictionary with depth statistics and spatial information
+        """
+        x1, y1, x2, y2 = bbox
+        
+        # Extract depth region
+        depth_roi = depth_map[y1:y2, x1:x2]
+        
+        # Filter invalid depths
+        valid_mask = (depth_roi > self.min_valid_depth) & (depth_roi < self.max_valid_depth)
+        valid_depths = depth_roi[valid_mask]
+        
+        if len(valid_depths) == 0:
+            return {
+                'distance': -1.0,
+                'distance_confidence': 0.0,
+                'spatial_consistency': 0.0,
+                'passable': False,
+                'obstacle_map': None
+            }
+        
+        # Depth statistics
+        mean_distance = np.mean(valid_depths)
+        std_distance = np.std(valid_depths)
+        median_distance = np.median(valid_depths)
+        
+        # Spatial consistency (how uniform is the depth?)
+        spatial_consistency = 1.0 / (1.0 + std_distance)
+        
+        # Confidence based on valid pixel ratio
+        distance_confidence = len(valid_depths) / depth_roi.size
+        
+        # Check if hoop is passable (no obstacles in the way)
+        passable = self._check_passable_path(depth_roi, mean_distance)
+        
+        # Create obstacle map for navigation
+        obstacle_map = self._create_obstacle_map(depth_roi)
+        
+        return {
+            'distance': mean_distance,
+            'distance_std': std_distance,
+            'distance_median': median_distance,
+            'distance_confidence': distance_confidence,
+            'spatial_consistency': spatial_consistency,
+            'valid_pixel_ratio': len(valid_depths) / depth_roi.size,
+            'passable': passable,
+            'obstacle_map': obstacle_map
+        }
+    
+    def _check_passable_path(self, depth_roi: np.ndarray, target_distance: float) -> bool:
+        """Check if there's a clear path through the hoop"""
+        # Create mask for depths significantly closer than the hoop
+        obstacle_threshold = target_distance - self.safety_margin
+        obstacle_mask = (depth_roi < obstacle_threshold) & (depth_roi > self.min_valid_depth)
+        
+        # If more than 20% of the region has obstacles, consider it blocked
+        obstacle_ratio = np.sum(obstacle_mask) / depth_roi.size
+        return obstacle_ratio < 0.2
+    
+    def _create_obstacle_map(self, depth_roi: np.ndarray) -> np.ndarray:
+        """Create obstacle map for local navigation"""
+        # Simple obstacle detection based on depth gradients
+        h, w = depth_roi.shape
+        obstacle_map = np.zeros((h, w), dtype=np.uint8)
+        
+        # Mark invalid depths as obstacles
+        invalid_mask = (depth_roi <= self.min_valid_depth) | (depth_roi >= self.max_valid_depth)
+        obstacle_map[invalid_mask] = 255
+        
+        # Mark steep depth gradients as potential obstacles
+        if h > 2 and w > 2:
+            # Compute depth gradients
+            grad_x = np.abs(np.diff(depth_roi, axis=1))
+            grad_y = np.abs(np.diff(depth_roi, axis=0))
+            
+            # Threshold for steep gradients (indicating obstacles)
+            grad_threshold = 0.5  # meters per pixel
+            
+            steep_x = grad_x > grad_threshold
+            steep_y = grad_y > grad_threshold
+            
+            obstacle_map[:-1, 1:][steep_y] = 128
+            obstacle_map[1:, :-1][steep_x] = 128
+        
+        return obstacle_map
+
 
 class YOLO11HoopDetector:
-    """YOLO11-based hoop detector with depth integration"""
+    """YOLO11-based hoop detector with enhanced depth integration"""
     
     def __init__(self, model_path: str = "trained_models/yolo/best.pt", 
                  confidence_threshold: float = 0.5):
@@ -39,6 +158,9 @@ class YOLO11HoopDetector:
         # Detection parameters
         self.min_hoop_area = 100  # minimum bbox area in pixels
         self.max_detections = 5   # maximum hoops to detect per frame
+        
+        # Enhanced depth processor
+        self.depth_processor = EnhancedDepthProcessor()
         
     def load_model(self) -> bool:
         """Load YOLO11 model (production-only: requires explicit trained weights)."""

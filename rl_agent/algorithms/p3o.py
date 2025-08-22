@@ -318,36 +318,101 @@ class P3O:
         self.training_stats = checkpoint.get('training_stats', {})
         logger.info(f"Model loaded from {path}")
     
-    def save_model(self, checkpoint_path: str, episode: int, metrics: Dict[str, float]):
-        """Save complete model checkpoint for deployment"""
-        # Ensure directory exists
-        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+    def save_checkpoint(self, checkpoint_path: str, episode: int, 
+                       metrics: Dict[str, float], training_state: Optional[Dict] = None) -> str:
+        """
+        Save comprehensive training checkpoint for resumption
+        
+        Args:
+            checkpoint_path: Path to save checkpoint
+            episode: Current episode number
+            metrics: Training metrics to save
+            training_state: Additional training state (replay buffer, episode stats, etc.)
+            
+        Returns:
+            Path to saved checkpoint
+        """
+        checkpoint_dir = Path(checkpoint_path).parent
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
         checkpoint = {
+            'episode': episode,
+            'total_steps': getattr(self, 'total_steps', 0),
             'model_state_dict': self.network.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'episode': episode,
             'config': self.config.__dict__,
             'metrics': metrics,
+            'training_stats': self.training_stats,
             'timestamp': time.time(),
-            'p3o_version': '1.0'
+            'version': '1.0'
         }
-        torch.save(checkpoint, checkpoint_path)
-        logger.info(f"Model checkpoint saved to {checkpoint_path}")
         
-        # Save deployment-ready model (smaller, inference-optimized)
-        deployment_model = {
-            'model_state_dict': self.network.state_dict(),
-            'config': self.config.__dict__,
-            'normalization_params': self._get_normalization_params(),
-            'deployment_ready': True,
-            'timestamp': time.time()
-        }
-        deployment_path = checkpoint_path.replace('.pth', '_deployment.pth')
-        torch.save(deployment_model, deployment_path)
-        logger.info(f"Deployment model saved to {deployment_path}")
+        # Include additional training state
+        if training_state:
+            checkpoint['training_state'] = training_state
         
-        return deployment_path
+        # Save with atomic write (write to temp file, then rename)
+        temp_path = str(checkpoint_path) + '.tmp'
+        torch.save(checkpoint, temp_path)
+        
+        # Atomic rename
+        if os.path.exists(temp_path):
+            os.rename(temp_path, checkpoint_path)
+            logger.info(f"Checkpoint saved: {checkpoint_path}")
+        
+        return checkpoint_path
+    
+    def load_checkpoint(self, checkpoint_path: str) -> Dict[str, Any]:
+        """
+        Load training checkpoint for resumption
+        
+        Args:
+            checkpoint_path: Path to checkpoint file
+            
+        Returns:
+            Checkpoint metadata including training state
+        """
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+        
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            
+            # Validate checkpoint version
+            version = checkpoint.get('version', '0.0')
+            if version != '1.0':
+                logger.warning(f"Loading older checkpoint version {version}")
+            
+            # Load model and optimizer states
+            self.network.load_state_dict(checkpoint['model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            
+            # Restore training stats
+            if 'training_stats' in checkpoint:
+                self.training_stats = checkpoint['training_stats']
+            
+            # Update configuration if needed
+            if 'config' in checkpoint:
+                for key, value in checkpoint['config'].items():
+                    if hasattr(self.config, key):
+                        setattr(self.config, key, value)
+            
+            # Restore total steps
+            if 'total_steps' in checkpoint:
+                self.total_steps = checkpoint['total_steps']
+            
+            logger.info(f"Checkpoint loaded: {checkpoint_path}")
+            logger.info(f"Resuming from episode {checkpoint.get('episode', 0)}")
+            
+            return checkpoint
+            
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}")
+            raise
+
+    def save_model(self, checkpoint_path: str, episode: int, metrics: Dict[str, float]):
+        """Save complete model checkpoint for deployment (legacy method - use save_checkpoint)"""
+        return self.save_checkpoint(checkpoint_path, episode, metrics)
     
     def load_model_for_deployment(self, model_path: str):
         """Load model optimized for real-time inference"""

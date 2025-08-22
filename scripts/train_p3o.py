@@ -19,9 +19,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from rl_agent.direct_control_agent import DirectControlAgent, DirectControlConfig
 from rl_agent.algorithms.p3o import P3OConfig
+from rl_agent.algorithms.replay_buffer import P3OReplayBuffer
 from rl_agent.rewards.rewards import HoopNavigationReward, get_reward_preset
 from rl_agent.env.safety_layer import SafetyLayer, SafetyBounds
-from rl_agent.utils import PerformanceTracker
+from rl_agent.utils import PerformanceTracker, ClearMLTracker
+from rl_agent.config_loader import get_config_manager, TrainingConfig
 from rl_agent.flight_phase_integration import integrate_phase_management
 
 # Optional ClearML integration
@@ -33,8 +35,123 @@ except ImportError:
     print("ClearML not available, training without experiment tracking")
 
 
+class EpisodeManager:
+    """Manages episode lifecycle and statistics"""
+    
+    def __init__(self, config: TrainingConfig):
+        self.config = config
+        self.current_episode = 0
+        self.current_step = 0
+        self.episode_reward = 0.0
+        self.episode_start_time = 0.0
+        self.episode_history = []
+        
+        # Episode statistics
+        self.total_reward = 0.0
+        self.total_steps = 0
+        self.successful_episodes = 0
+        self.failed_episodes = 0
+        
+        # Performance tracking
+        self.reward_window = []
+        self.window_size = 100
+        self.best_reward = -float('inf')
+        self.best_episode = 0
+        
+        # Early stopping
+        self.patience_counter = 0
+        self.should_stop_early = False
+        
+    def start_episode(self):
+        """Start a new episode"""
+        self.current_episode += 1
+        self.current_step = 0
+        self.episode_reward = 0.0
+        self.episode_start_time = time.time()
+        
+        logger.info(f"Starting Episode {self.current_episode}")
+    
+    def step(self, reward: float):
+        """Record a step in the current episode"""
+        self.current_step += 1
+        self.episode_reward += reward
+        self.total_reward += reward
+        self.total_steps += 1
+    
+    def end_episode(self, success: bool = False, reason: str = "completed"):
+        """End the current episode"""
+        episode_duration = time.time() - self.episode_start_time
+        
+        # Update statistics
+        if success:
+            self.successful_episodes += 1
+        else:
+            self.failed_episodes += 1
+        
+        # Track reward
+        self.reward_window.append(self.episode_reward)
+        if len(self.reward_window) > self.window_size:
+            self.reward_window.pop(0)
+        
+        # Update best performance
+        if self.episode_reward > self.best_reward:
+            self.best_reward = self.episode_reward
+            self.best_episode = self.current_episode
+            self.patience_counter = 0
+            logger.info(f"New best reward: {self.best_reward:.2f} in episode {self.best_episode}")
+        else:
+            self.patience_counter += 1
+        
+        # Check early stopping
+        if self.patience_counter >= self.config.early_stopping_patience:
+            self.should_stop_early = True
+            logger.warning(f"Early stopping triggered after {self.patience_counter} episodes without improvement")
+        
+        # Record episode
+        episode_info = {
+            'episode': self.current_episode,
+            'reward': self.episode_reward,
+            'steps': self.current_step,
+            'duration': episode_duration,
+            'success': success,
+            'reason': reason,
+            'timestamp': time.time()
+        }
+        self.episode_history.append(episode_info)
+        
+        logger.info(f"Episode {self.current_episode} ended: reward={self.episode_reward:.2f}, "
+                   f"steps={self.current_step}, duration={episode_duration:.1f}s, reason={reason}")
+        
+        return episode_info
+    
+    def get_stats(self) -> Dict[str, float]:
+        """Get current episode statistics"""
+        avg_reward = np.mean(self.reward_window) if self.reward_window else 0.0
+        success_rate = self.successful_episodes / max(1, self.current_episode)
+        
+        return {
+            'current_episode': self.current_episode,
+            'total_steps': self.total_steps,
+            'avg_reward_100': avg_reward,
+            'best_reward': self.best_reward,
+            'success_rate': success_rate,
+            'patience_counter': self.patience_counter
+        }
+    
+    def should_continue(self) -> bool:
+        """Check if training should continue"""
+        if self.should_stop_early:
+            return False
+        if self.current_episode >= self.config.max_episodes:
+            return False
+        if self.best_reward >= self.config.target_reward:
+            logger.info(f"Target reward {self.config.target_reward} achieved!")
+            return False
+        return True
+
+
 class P3OTrainer:
-    """Training coordinator for P3O drone control"""
+    """Enhanced training coordinator for P3O drone control with comprehensive episode management"""
     
     def __init__(self, args):
         self.args = args
@@ -42,21 +159,39 @@ class P3OTrainer:
         # Setup directories
         self.setup_directories()
         
+        # Load unified configuration
+        self.config_manager = get_config_manager()
+        self.training_config = self.config_manager.get_training_config()
+        self.p3o_config = self.config_manager.get_p3o_config()
+        self.safety_config = self.config_manager.get_safety_config()
+        self.camera_config = self.config_manager.get_camera_config()
+        self.reward_config = self.config_manager.get_reward_config()
+        
         # Initialize ClearML if available
-        self.task = None
+        self.clearml_tracker = None
         if CLEARML_AVAILABLE and args.use_clearml:
-            self.task = Task.init(
+            self.clearml_tracker = ClearMLTracker(
                 project_name="DeepFlyer",
-                task_name=f"P3O_Training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                task_name=f"P3O_Training_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                tags=['p3o', 'training', 'hoop-navigation']
             )
+            # Log all configurations to ClearML
+            self.clearml_tracker.log_hyperparameters(self.p3o_config.to_dict())
         
-        # Load configurations
-        self.control_config = self.load_control_config()
-        self.p3o_config = self.load_p3o_config()
-        self.reward_config = get_reward_preset(args.reward_preset)
-        
-        # Initialize agent
+        # Initialize agent with unified config
+        self.control_config = DirectControlConfig(
+            obs_dim=8, action_dim=4,
+            max_velocity=2.0, max_yaw_rate=1.0
+        )
         self.agent = DirectControlAgent(self.control_config, self.p3o_config)
+        
+        # Initialize enhanced replay buffer
+        self.replay_buffer = P3OReplayBuffer(
+            obs_dim=8, action_dim=4,
+            buffer_size=10000,
+            gamma=self.p3o_config.gamma,
+            gae_lambda=self.p3o_config.gae_lambda
+        )
         
         # Load checkpoint if specified
         if args.checkpoint:
@@ -66,33 +201,162 @@ class P3OTrainer:
         # Initialize reward function
         self.reward_fn = HoopNavigationReward(self.reward_config)
         
-        # Initialize safety layer
+        # Initialize safety layer with unified config
+        safety_bounds = SafetyBounds(
+            x_min=-5.0, x_max=5.0,
+            y_min=-5.0, y_max=5.0, 
+            z_min=0.3, z_max=3.0,
+            vel_max_xy=self.control_config.max_velocity,
+            max_tilt_angle=30.0,
+            min_distance_to_obstacle=0.5
+        )
+        
         self.safety_layer = SafetyLayer(
-            safety_bounds=SafetyBounds(),
-            enable_geofence=True,
-            enable_collision_prevention=True,
-            enable_attitude_limits=True,
-            enable_velocity_ramping=True,
+            safety_bounds=safety_bounds,
+            enable_geofence=self.safety_config.enable_geofence,
+            enable_collision_prevention=self.safety_config.enable_collision_avoidance,
+            enable_attitude_limits=self.safety_config.enable_attitude_limits,
+            enable_velocity_ramping=self.safety_config.enable_velocity_ramping,
+            max_acceleration=self.safety_config.max_acceleration,
             log_violations=True
         )
+        
+        # Initialize episode manager
+        self.episode_manager = EpisodeManager(self.training_config)
         
         # Initialize performance tracker
         self.performance_tracker = PerformanceTracker()
         
-        # Training statistics
-        self.episode_rewards = []
-        self.episode_lengths = []
+        # Training statistics  
         self.training_losses = []
-        self.best_reward = -float('inf')
+        self.safety_interventions = 0
+        
+        # Checkpointing
+        self.last_checkpoint_episode = 0
+        self.checkpoint_dir = Path("trained_models/p3o/checkpoints")
+        
+        # Resume training if specified
+        if self.training_config.resume_training and args.checkpoint:
+            self.resume_from_checkpoint(args.checkpoint)
         
     def setup_directories(self):
         """Create necessary directories"""
         self.model_dir = Path("trained_models/p3o")
         self.log_dir = Path("experiments/logs")
         self.config_dir = Path("config")
+        self.checkpoint_dir = Path("trained_models/p3o/checkpoints")
         
-        for dir_path in [self.model_dir, self.log_dir, self.config_dir]:
-            dir_path.mkdir(exist_ok=True)
+        for dir_path in [self.model_dir, self.log_dir, self.config_dir, self.checkpoint_dir]:
+            dir_path.mkdir(parents=True, exist_ok=True)
+    
+    def create_checkpoint(self, episode: int, metrics: Dict[str, float]) -> str:
+        """Create training checkpoint"""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        checkpoint_filename = f"p3o_checkpoint_ep{episode}_{timestamp}.pt"
+        checkpoint_path = self.checkpoint_dir / checkpoint_filename
+        
+        # Gather training state
+        episode_stats = self.episode_manager.get_stats()
+        buffer_stats = self.replay_buffer.get_statistics()
+        safety_stats = self.safety_layer.get_status()
+        
+        training_state = {
+            'episode_manager': {
+                'current_episode': self.episode_manager.current_episode,
+                'total_steps': self.episode_manager.total_steps,
+                'best_reward': self.episode_manager.best_reward,
+                'best_episode': self.episode_manager.best_episode,
+                'successful_episodes': self.episode_manager.successful_episodes,
+                'patience_counter': self.episode_manager.patience_counter,
+                'reward_window': self.episode_manager.reward_window
+            },
+            'safety_interventions': self.safety_interventions,
+            'training_losses': self.training_losses[-100:],  # Keep last 100 losses
+            'buffer_stats': buffer_stats,
+            'safety_stats': safety_stats
+        }
+        
+        # Save checkpoint using P3O agent
+        saved_path = self.agent.p3o.save_checkpoint(
+            checkpoint_path=str(checkpoint_path),
+            episode=episode,
+            metrics=metrics,
+            training_state=training_state
+        )
+        
+        # Create "latest" symlink
+        latest_path = self.checkpoint_dir / "latest_checkpoint.pt"
+        if latest_path.exists():
+            latest_path.unlink()
+        
+        try:
+            # Create symlink (works on both Unix and Windows 10+)
+            latest_path.symlink_to(checkpoint_path.name)
+        except OSError:
+            # Fallback: copy file if symlink not supported
+            import shutil
+            shutil.copy2(checkpoint_path, latest_path)
+        
+        self.last_checkpoint_episode = episode
+        logger.info(f"Training checkpoint created: {saved_path}")
+        
+        # Log checkpoint to ClearML if available
+        if self.clearml_tracker:
+            self.clearml_tracker.log_metrics({'checkpoint_saved': 1}, episode)
+        
+        return saved_path
+    
+    def resume_from_checkpoint(self, checkpoint_path: str):
+        """Resume training from checkpoint"""
+        logger.info(f"Resuming training from checkpoint: {checkpoint_path}")
+        
+        try:
+            # Load checkpoint
+            checkpoint = self.agent.p3o.load_checkpoint(checkpoint_path)
+            
+            # Restore training state
+            if 'training_state' in checkpoint:
+                training_state = checkpoint['training_state']
+                
+                # Restore episode manager state
+                if 'episode_manager' in training_state:
+                    em_state = training_state['episode_manager']
+                    self.episode_manager.current_episode = em_state.get('current_episode', 0)
+                    self.episode_manager.total_steps = em_state.get('total_steps', 0)
+                    self.episode_manager.best_reward = em_state.get('best_reward', -float('inf'))
+                    self.episode_manager.best_episode = em_state.get('best_episode', 0)
+                    self.episode_manager.successful_episodes = em_state.get('successful_episodes', 0)
+                    self.episode_manager.patience_counter = em_state.get('patience_counter', 0)
+                    self.episode_manager.reward_window = em_state.get('reward_window', [])
+                
+                # Restore other training state
+                self.safety_interventions = training_state.get('safety_interventions', 0)
+                self.training_losses = training_state.get('training_losses', [])
+            
+            self.last_checkpoint_episode = checkpoint.get('episode', 0)
+            
+            logger.info(f"Training resumed from episode {self.episode_manager.current_episode}")
+            logger.info(f"Best reward so far: {self.episode_manager.best_reward:.2f}")
+            
+        except Exception as e:
+            logger.error(f"Failed to resume from checkpoint: {e}")
+            logger.warning("Starting training from scratch")
+    
+    def should_save_checkpoint(self, episode: int) -> bool:
+        """Check if we should save a checkpoint"""
+        # Save at regular intervals
+        if episode - self.last_checkpoint_episode >= self.training_config.save_frequency:
+            return True
+        
+        # Save on best performance
+        if self.episode_manager.best_episode == episode:
+            return True
+        
+        # Save before potential early stopping
+        if self.episode_manager.patience_counter >= self.training_config.early_stopping_patience - 5:
+            return True
+        
+        return False
     
     def load_control_config(self) -> DirectControlConfig:
         """Load or create control configuration"""
