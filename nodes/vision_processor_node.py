@@ -59,8 +59,11 @@ class VisionProcessorNode(Node):
         self.declare_parameter('processing_fps', 20.0)
         self.declare_parameter('debug_visualization', False)
         
-        # Get parameters
-        self.yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
+        # Get parameters (update path to new structure)
+        yolo_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
+        if yolo_path == 'weights/best.pt':
+            yolo_path = 'trained_models/yolo/best.pt'
+        self.yolo_model_path = yolo_path
         self.confidence_threshold = self.get_parameter('confidence_threshold').get_parameter_value().double_value
         self.target_fps = self.get_parameter('processing_fps').get_parameter_value().double_value
         self.debug_viz = self.get_parameter('debug_visualization').get_parameter_value().bool_value
@@ -74,9 +77,12 @@ class VisionProcessorNode(Node):
             confidence_threshold=self.confidence_threshold
         )
         
-        # Load YOLO model
-        if not self.yolo_detector.load_model():
-            self.get_logger().warn("Failed to load YOLO model, using mock detection")
+        # Load YOLO model (hard fail if not available)
+        try:
+            self.yolo_detector.load_model()
+        except Exception as e:
+            self.get_logger().error(f"Failed to load YOLO model: {e}")
+            raise
         
         # Vision processing state
         self.latest_rgb_image: Optional[np.ndarray] = None

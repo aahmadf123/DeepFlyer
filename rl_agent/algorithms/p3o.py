@@ -233,9 +233,17 @@ class P3O:
             # Calculate ratio for P3O clipping
             ratio = torch.exp(log_probs - old_log_probs)
             
+            # Ensure advantages match ratio dimensions
+            if advantages.dim() == 1 and ratio.dim() == 2:
+                advantages_matched = advantages.unsqueeze(1)
+            elif advantages.dim() == 2 and ratio.dim() == 1:
+                advantages_matched = advantages.squeeze(1)
+            else:
+                advantages_matched = advantages
+            
             # Clipped surrogate loss
-            surr1 = ratio * advantages.unsqueeze(1)
-            surr2 = torch.clamp(ratio, 1 - self.config.clip_ratio, 1 + self.config.clip_ratio) * advantages.unsqueeze(1)
+            surr1 = ratio * advantages_matched
+            surr2 = torch.clamp(ratio, 1 - self.config.clip_ratio, 1 + self.config.clip_ratio) * advantages_matched
             policy_loss = -torch.min(surr1, surr2).mean()
             
             # Value loss

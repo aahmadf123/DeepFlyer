@@ -111,10 +111,10 @@
   },
   "training_settings": {
     "max_episodes": {
-      "default": 1000,
+      "description": "Maximum training episodes - REQUIRED: Students must specify this value",
       "min": 100,
       "max": 10000,
-      "description": "Maximum training episodes"
+      "required": true
     },
     "max_steps_per_episode": {
       "default": 500,

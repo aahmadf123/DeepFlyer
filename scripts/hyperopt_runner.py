@@ -19,8 +19,8 @@ from typing import Dict, Any, Optional
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from rl_agent.algorithms.p3o import P3OConfig, HyperparameterOptimizer
-from rl_agent.utils import ClearMLTracker
+from rl_agent.algorithms.p3o import P3OConfig
+from rl_agent.utils import ClearMLTracker, HyperparameterOptimizer, PerformanceTracker
 
 
 class HyperoptRunner:
@@ -178,7 +178,7 @@ class HyperoptRunner:
         if self.optimizer.best_config:
             best_config_file = results_dir / "best_config.json"
             with open(best_config_file, 'w') as f:
-                json.dump(self.optimizer.best_config, f, indent=2)
+                json.dump(self.optimizer.best_config.__dict__, f, indent=2)
             print(f"Best config saved to: {best_config_file}")
 
 

@@ -73,7 +73,7 @@ reward:
 
 # Training Settings
 training:
-  max_episodes: 1000
+  # max_episodes: removed - users must specify training duration
   max_steps_per_episode: 500
   updates_per_episode: 10
   replay_buffer_size: 10000
@@ -85,7 +85,7 @@ training:
   
   # Checkpointing
   save_frequency: 100  # episodes
-  model_dir: "models/p3o"
+  model_dir: "trained_models/p3o"
   log_dir: "experiments/logs"
   
   # Logging

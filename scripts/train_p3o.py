@@ -20,6 +20,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rl_agent.direct_control_agent import DirectControlAgent, DirectControlConfig
 from rl_agent.algorithms.p3o import P3OConfig
 from rl_agent.rewards.rewards import HoopNavigationReward, get_reward_preset
+from rl_agent.env.safety_layer import SafetyLayer, SafetyBounds
+from rl_agent.utils import PerformanceTracker
+from rl_agent.flight_phase_integration import integrate_phase_management
 
 # Optional ClearML integration
 try:
@@ -63,6 +66,19 @@ class P3OTrainer:
         # Initialize reward function
         self.reward_fn = HoopNavigationReward(self.reward_config)
         
+        # Initialize safety layer
+        self.safety_layer = SafetyLayer(
+            safety_bounds=SafetyBounds(),
+            enable_geofence=True,
+            enable_collision_prevention=True,
+            enable_attitude_limits=True,
+            enable_velocity_ramping=True,
+            log_violations=True
+        )
+        
+        # Initialize performance tracker
+        self.performance_tracker = PerformanceTracker()
+        
         # Training statistics
         self.episode_rewards = []
         self.episode_lengths = []
@@ -71,7 +87,7 @@ class P3OTrainer:
         
     def setup_directories(self):
         """Create necessary directories"""
-        self.model_dir = Path("models/p3o")
+        self.model_dir = Path("trained_models/p3o")
         self.log_dir = Path("experiments/logs")
         self.config_dir = Path("config")
         
@@ -179,6 +195,28 @@ class P3OTrainer:
         return obs
     
     def simulate_step(self, obs: np.ndarray, action: np.ndarray, step: int):
+        """Simulate environment step with safety layer integration"""
+        # Extract position from observation for safety checking
+        # In simulation, we'll create a mock position based on step
+        mock_position = np.array([
+            obs[0] * 2.0,  # Convert normalized to meters
+            obs[1] * 2.0,  # Convert normalized to meters 
+            1.5 - step * 0.001  # Slowly decreasing altitude
+        ])
+        
+        # Process action through safety layer
+        safe_action = self.safety_layer.process_command(
+            velocity_command=action[:3] if len(action) >= 3 else action,
+            position=mock_position,
+            obstacle_distance=obs[3] * 5.0 if obs[2] > 0.5 else None  # Convert to meters
+        )
+        
+        # Count safety interventions
+        safety_interventions = 0
+        if not np.allclose(action[:3], safe_action, atol=1e-6):
+            safety_interventions = 1
+        
+        # Continue with original simulation logic...
         """Simulate environment dynamics"""
         # Generate next observation
         next_obs = obs.copy()
@@ -234,6 +272,18 @@ class P3OTrainer:
             self.episode_rewards.append(episode_reward)
             self.episode_lengths.append(self.agent.episode_step)
             
+            # Track safety interventions
+            safety_interventions = self.safety_layer.intervention_count
+            self.performance_tracker.log_episode(
+                reward=episode_reward,
+                length=self.agent.episode_step,
+                loss=self.training_losses[-1] if self.training_losses else None,
+                safety_interventions=safety_interventions
+            )
+            
+            # Reset safety layer for next episode
+            self.safety_layer.reset()
+            
             # Calculate moving averages
             if len(self.episode_rewards) >= 10:
                 avg_reward = np.mean(self.episode_rewards[-10:])
@@ -244,10 +294,12 @@ class P3OTrainer:
             
             # Print progress
             if episode % self.args.log_interval == 0:
+                safety_interventions = self.safety_layer.intervention_count
                 print(f"Episode {episode:4d} | "
                       f"Reward: {episode_reward:7.2f} | "
                       f"Avg(10): {avg_reward:7.2f} | "
                       f"Steps: {self.agent.episode_step:3d} | "
+                      f"Safety: {safety_interventions:2d} | "
                       f"Buffer: {len(self.agent.replay_buffer):5d}")
                 
                 # Log to ClearML
@@ -284,14 +336,17 @@ class P3OTrainer:
         print(f"Total Episodes: {len(self.episode_rewards)}")
         print(f"Best Average Reward: {self.best_reward:.2f}")
         print(f"Final Average Reward: {np.mean(self.episode_rewards[-10:]):.2f}")
+        
+        # Save final performance metrics
+        self.performance_tracker.save_metrics("final_training_metrics.json")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Train P3O agent for drone racing")
     
     # Training parameters
-    parser.add_argument("--episodes", type=int, default=1000,
-                       help="Number of training episodes")
+    parser.add_argument("--episodes", type=int, required=True,
+                       help="Number of training episodes (REQUIRED)")
     parser.add_argument("--max_steps", type=int, default=500,
                        help="Maximum steps per episode")
     parser.add_argument("--updates_per_episode", type=int, default=10,
@@ -325,6 +380,10 @@ def main():
     
     # Create trainer and run training
     trainer = P3OTrainer(args)
+    
+    # Integrate phase management for complete system
+    trainer = integrate_phase_management(trainer)
+    
     trainer.train()
 
 
