@@ -11,8 +11,10 @@ import numpy as np
 import torch
 import time
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Dict
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,6 +27,9 @@ from rl_agent.env.safety_layer import SafetyLayer, SafetyBounds
 from rl_agent.utils import PerformanceTracker, ClearMLTracker
 from rl_agent.config_loader import get_config_manager, TrainingConfig
 from rl_agent.flight_phase_integration import integrate_phase_management
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # Optional ClearML integration
 try:
@@ -169,6 +174,7 @@ class P3OTrainer:
         
         # Initialize ClearML if available
         self.clearml_tracker = None
+        self.task = None
         if CLEARML_AVAILABLE and args.use_clearml:
             self.clearml_tracker = ClearMLTracker(
                 project_name="DeepFlyer",
@@ -177,6 +183,7 @@ class P3OTrainer:
             )
             # Log all configurations to ClearML
             self.clearml_tracker.log_hyperparameters(self.p3o_config.to_dict())
+            self.task = self.clearml_tracker.task if self.clearml_tracker else None
         
         # Initialize agent with unified config
         self.control_config = DirectControlConfig(
@@ -230,6 +237,9 @@ class P3OTrainer:
         # Training statistics  
         self.training_losses = []
         self.safety_interventions = 0
+        self.episode_rewards = []
+        self.episode_lengths = []
+        self.best_reward = -float('inf')
         
         # Checkpointing
         self.last_checkpoint_episode = 0

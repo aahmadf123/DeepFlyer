@@ -148,7 +148,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'training_mode': training_mode,
-            'model_save_path': 'trained_models/p3o/mvp_p3o_model.pt',
+            'model_save_path': 'trained_models/p3o/p3o_model.pt',
             'training_config_file': 'config/training_config.yaml',
             'action_frequency': control_frequency
         }],

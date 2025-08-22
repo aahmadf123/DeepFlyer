@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-PX4 Interface Node for MVP Hoop Navigation
+PX4 Interface Node for DeepFlyer Hoop Navigation
 
 This ROS2 node provides the interface between the RL agent and PX4 flight controller
 using PX4-ROS-COM for low-latency communication.
 
 Subscribes to:
-- /deepflyer/rl_action (MVP 4D actions from RL agent)
+- /deepflyer/rl_action (4D actions from RL agent)
 - /fmu/out/vehicle_local_position (drone position/velocity)
 - /fmu/out/vehicle_status (flight controller status)
 
@@ -14,7 +14,7 @@ Publishes to:
 - /fmu/in/vehicle_command (PX4 commands)
 - /fmu/in/offboard_control_mode (control mode)
 - /fmu/in/trajectory_setpoint (position/velocity commands)
-- /deepflyer/course_state (MVP trajectory state)
+- /deepflyer/course_state (trajectory state)
 """
 
 import rclpy
@@ -66,8 +66,8 @@ class PX4FlightMode(Enum):
     AUTO_RTL = 10
 
 
-class MVPSafetyLimits:
-    """Safety limits for MVP flight"""
+class FlightSafetyLimits:
+    """Safety limits for drone flight"""
     
     def __init__(self):
         # Velocity limits (m/s)

@@ -742,3 +742,4 @@ class DeploymentManager:
             logger.error(f"Failed to list backups: {e}")
         
         return backups
+

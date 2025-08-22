@@ -46,6 +46,9 @@
 - `rl_agent/direct_control_node.py` → Use `nodes/rl_agent_node.py`
 - `rl_agent/px4_training_node.py` → Use `nodes/rl_agent_node.py`
 - `nodes/p3o_agent_node.py` → Use `nodes/rl_agent_node.py` (more complete)
+- `rl_agent/env/flight_phases.py` → Use `rl_agent/trajectory.py` (consolidated)
+- `rl_agent/env/mvp_trajectory.py` → Use `rl_agent/trajectory.py` (production version)
+- `rl_agent/env/px4_env_extensions.py` → Untracked file, removed
 - `rl_agent/config.py` → Recreated to work with YAML/JSON config system
 
 ## Clear Separation of Concerns

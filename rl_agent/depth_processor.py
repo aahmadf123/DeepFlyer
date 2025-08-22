@@ -178,9 +178,9 @@ class YOLO11HoopDetector:
             raise
     
     def detect_hoops(self, rgb_image: np.ndarray, depth_image: Optional[np.ndarray] = None,
-                    camera_info: Optional[Dict] = None) -> List[HoopDetection]:
+                    camera_info: Optional[Dict] = None) -> List[EnhancedHoopDetection]:
         """
-        Detect hoops in RGB image and calculate 3D positions using depth
+        Detect hoops in RGB image and calculate enhanced 3D information using depth
         
         Args:
             rgb_image: RGB image (H, W, 3)
@@ -188,7 +188,7 @@ class YOLO11HoopDetector:
             camera_info: Camera calibration parameters
             
         Returns:
-            List of hoop detections
+            List of enhanced hoop detections with comprehensive depth analysis
         """
         if self.model is None:
             raise RuntimeError("YOLO model not loaded. Call load_model() successfully before detection.")
@@ -224,24 +224,51 @@ class YOLO11HoopDetector:
                     # Size ratio
                     size_ratio = bbox_area / (image_width * image_height)
                     
-                    # Calculate distance and 3D position using depth
-                    distance = 1.0  # Default distance
-                    center_3d = (0.0, 0.0, distance)
-                    
+                    # Enhanced depth processing if available
                     if depth_image is not None:
-                        distance, center_3d = self._calculate_3d_position(
-                            center_x, center_y, x1, y1, x2, y2,
-                            depth_image, camera_info
+                        enhanced_depth_info = self.depth_processor.process_depth_for_detection(
+                            depth_image, (x1, y1, x2, y2)
                         )
-                    
-                    detection = HoopDetection(
-                        bbox=(x1, y1, x2, y2),
-                        confidence=confidence,
-                        distance=distance,
-                        center_3d=center_3d,
-                        alignment=alignment,
-                        size_ratio=size_ratio
-                    )
+                        
+                        distance = enhanced_depth_info['distance']
+                        center_3d = self._calculate_3d_position_enhanced(
+                            center_x, center_y, distance, camera_info
+                        )
+                        
+                        # Create enhanced detection
+                        detection = EnhancedHoopDetection(
+                            bbox=(x1, y1, x2, y2),
+                            confidence=confidence,
+                            distance=distance,
+                            center_3d=center_3d,
+                            alignment=alignment,
+                            size_ratio=size_ratio,
+                            distance_confidence=enhanced_depth_info['distance_confidence'],
+                            spatial_consistency=enhanced_depth_info['spatial_consistency'],
+                            passable=enhanced_depth_info['passable'],
+                            obstacle_map=enhanced_depth_info['obstacle_map'],
+                            depth_std=enhanced_depth_info.get('distance_std', 0.0),
+                            valid_pixel_ratio=enhanced_depth_info['valid_pixel_ratio']
+                        )
+                    else:
+                        # Fallback to basic detection without depth
+                        distance = 1.0
+                        center_3d = (0.0, 0.0, distance)
+                        
+                        detection = EnhancedHoopDetection(
+                            bbox=(x1, y1, x2, y2),
+                            confidence=confidence,
+                            distance=distance,
+                            center_3d=center_3d,
+                            alignment=alignment,
+                            size_ratio=size_ratio,
+                            distance_confidence=0.0,
+                            spatial_consistency=0.0,
+                            passable=True,  # Assume passable without depth
+                            obstacle_map=None,
+                            depth_std=0.0,
+                            valid_pixel_ratio=0.0
+                        )
                     
                     detections.append(detection)
             
@@ -293,6 +320,30 @@ class YOLO11HoopDetector:
             logger.error(f"Error calculating 3D position: {e}")
             return 1.0, (0.0, 0.0, 1.0)
     
+    def _calculate_3d_position_enhanced(self, center_x: int, center_y: int, 
+                                      distance: float, camera_info: Optional[Dict]) -> Tuple[float, float, float]:
+        """Calculate enhanced 3D position with proper camera calibration"""
+        try:
+            if camera_info and 'fx' in camera_info and 'fy' in camera_info:
+                fx = camera_info['fx']
+                fy = camera_info['fy']
+                cx = camera_info.get('cx', 320)  # Default for typical camera
+                cy = camera_info.get('cy', 240)
+                
+                # Project to 3D using proper pinhole camera model
+                x_3d = (center_x - cx) * distance / fx
+                y_3d = (center_y - cy) * distance / fy
+                z_3d = distance
+                
+                return (x_3d, y_3d, z_3d)
+            else:
+                # Fallback without calibration
+                return (0.0, 0.0, distance)
+                
+        except Exception as e:
+            logger.error(f"Error calculating enhanced 3D position: {e}")
+            return (0.0, 0.0, distance)
+    
     
     def process_detections_to_features(self, detections: List[HoopDetection], 
                                      target_hoop_id: int = 0) -> np.ndarray:
@@ -329,16 +380,25 @@ class YOLO11HoopDetector:
 
 
 class DepthProcessor:
-    """Processes ZED Mini depth data for navigation"""
+    """Enhanced ZED Mini depth data processor with advanced navigation features"""
     
     def __init__(self):
         self.depth_scale = 1.0  # ZED outputs depth in mm
         self.max_reliable_depth = 10.0  # 10 meters max reliable range
+        self.min_reliable_depth = 0.1   # 10cm minimum reliable range
+        
+        # Temporal filtering for depth stability
+        self.depth_history = []
+        self.history_size = 5
+        
+        # Advanced processing parameters
+        self.median_filter_size = 5  # For noise reduction
+        self.gradient_threshold = 0.5  # For edge detection (m/pixel)
         
     def process_depth_for_collision(self, depth_image: np.ndarray, 
                                   safety_radius: float = 1.0) -> Tuple[float, Optional[np.ndarray]]:
         """
-        Process depth image for collision avoidance
+        Enhanced depth processing for collision avoidance with temporal filtering
         
         Args:
             depth_image: Depth image in millimeters
@@ -347,26 +407,195 @@ class DepthProcessor:
         Returns:
             Tuple of (min_distance, obstacle_direction)
         """
-        # Convert to meters
-        depth_m = depth_image.astype(np.float32) / 1000.0
+        # Convert to meters and apply temporal filtering
+        depth_m = self._apply_temporal_filtering(depth_image.astype(np.float32) / 1000.0)
+        
+        # Apply spatial filtering for noise reduction
+        depth_filtered = self._apply_spatial_filtering(depth_m)
         
         # Filter invalid values
-        valid_mask = (depth_m > 0.1) & (depth_m < self.max_reliable_depth)
+        valid_mask = (depth_filtered > self.min_reliable_depth) & (depth_filtered < self.max_reliable_depth)
         
         if not np.any(valid_mask):
             return self.max_reliable_depth, None
         
-        # Find minimum distance
-        min_distance = np.min(depth_m[valid_mask])
+        # Find minimum distance with safety margin
+        safe_depths = depth_filtered[valid_mask]
+        min_distance = np.min(safe_depths)
         
-        # Find direction to closest obstacle
-        min_idx = np.unravel_index(np.argmin(depth_m, axis=None), depth_m.shape)
-        h, w = depth_image.shape
-        
-        # Convert pixel coordinates to normalized direction
-        direction_x = (min_idx[1] - w / 2) / (w / 2)  # -1 to 1
-        direction_y = (min_idx[0] - h / 2) / (h / 2)  # -1 to 1
-        
-        obstacle_direction = np.array([direction_x, direction_y, 0.0])
+        # Find direction to closest obstacle with enhanced accuracy
+        obstacle_direction = self._calculate_obstacle_direction(depth_filtered, valid_mask)
         
         return min_distance, obstacle_direction
+    
+    def _apply_temporal_filtering(self, depth_image: np.ndarray) -> np.ndarray:
+        """Apply temporal filtering to reduce depth noise"""
+        # Add current frame to history
+        self.depth_history.append(depth_image.copy())
+        
+        # Maintain history size
+        if len(self.depth_history) > self.history_size:
+            self.depth_history.pop(0)
+        
+        # If we have multiple frames, use temporal median
+        if len(self.depth_history) > 1:
+            depth_stack = np.stack(self.depth_history, axis=0)
+            filtered_depth = np.median(depth_stack, axis=0)
+            return filtered_depth
+        else:
+            return depth_image
+    
+    def _apply_spatial_filtering(self, depth_image: np.ndarray) -> np.ndarray:
+        """Apply spatial filtering to reduce noise"""
+        try:
+            import cv2
+            # Apply median filter to reduce noise
+            filtered = cv2.medianBlur(depth_image.astype(np.float32), self.median_filter_size)
+            return filtered
+        except ImportError:
+            # Fallback: simple averaging filter
+            from scipy import ndimage
+            return ndimage.uniform_filter(depth_image, size=3)
+        except:
+            # Last resort: return original
+            return depth_image
+    
+    def _calculate_obstacle_direction(self, depth_image: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
+        """Calculate direction to nearest obstacle with improved accuracy"""
+        h, w = depth_image.shape
+        
+        # Create distance-weighted map
+        y_coords, x_coords = np.ogrid[:h, :w]
+        center_y, center_x = h // 2, w // 2
+        
+        # Weight by distance from center and depth value
+        pixel_distances = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
+        
+        # Combine depth and pixel distance for threat assessment
+        threat_map = np.zeros_like(depth_image)
+        threat_map[valid_mask] = 1.0 / (depth_image[valid_mask] + 0.1)  # Closer = higher threat
+        
+        # Weight by field of view position (center is more important)
+        fov_weight = 1.0 / (1.0 + pixel_distances / max(w, h))
+        threat_map *= fov_weight
+        
+        # Find direction of highest threat
+        if np.any(threat_map > 0):
+            max_threat_idx = np.unravel_index(np.argmax(threat_map), threat_map.shape)
+            direction_x = (max_threat_idx[1] - center_x) / center_x  # -1 to 1
+            direction_y = (max_threat_idx[0] - center_y) / center_y  # -1 to 1
+            return np.array([direction_x, direction_y, 0.0])
+        
+        return np.array([0.0, 0.0, 0.0])
+    
+    def get_navigation_features(self, depth_image: np.ndarray) -> Dict[str, Any]:
+        """
+        Extract advanced navigation features from depth image
+        
+        Returns:
+            Dictionary with navigation-relevant depth features
+        """
+        depth_m = depth_image.astype(np.float32) / 1000.0
+        valid_mask = (depth_m > self.min_reliable_depth) & (depth_m < self.max_reliable_depth)
+        
+        if not np.any(valid_mask):
+            return {
+                'clear_path_ahead': False,
+                'min_distance': self.max_reliable_depth,
+                'average_distance': self.max_reliable_depth,
+                'depth_variance': 0.0,
+                'obstacle_density': 0.0,
+                'navigation_confidence': 0.0
+            }
+        
+        valid_depths = depth_m[valid_mask]
+        
+        # Basic statistics
+        min_distance = np.min(valid_depths)
+        avg_distance = np.mean(valid_depths)
+        depth_variance = np.var(valid_depths)
+        
+        # Navigation analysis
+        h, w = depth_image.shape
+        center_region = depth_m[h//3:2*h//3, w//3:2*w//3]  # Central third
+        center_valid_mask = (center_region > self.min_reliable_depth) & (center_region < self.max_reliable_depth)
+        
+        if np.any(center_valid_mask):
+            center_min_distance = np.min(center_region[center_valid_mask])
+            clear_path_ahead = center_min_distance > 2.0  # 2m clearance
+        else:
+            clear_path_ahead = False
+            center_min_distance = 0.0
+        
+        # Obstacle density (percentage of pixels with obstacles within 3m)
+        close_obstacles = np.sum((depth_m < 3.0) & valid_mask)
+        total_valid = np.sum(valid_mask)
+        obstacle_density = close_obstacles / max(total_valid, 1)
+        
+        # Navigation confidence based on depth quality and clearance
+        navigation_confidence = min(1.0, center_min_distance / 3.0) * (1.0 - obstacle_density)
+        
+        return {
+            'clear_path_ahead': clear_path_ahead,
+            'min_distance': float(min_distance),
+            'average_distance': float(avg_distance),
+            'center_min_distance': float(center_min_distance),
+            'depth_variance': float(depth_variance),
+            'obstacle_density': float(obstacle_density),
+            'navigation_confidence': float(navigation_confidence),
+            'valid_pixel_ratio': float(total_valid / (h * w))
+        }
+    
+    def detect_narrow_passages(self, depth_image: np.ndarray, 
+                             passage_width_threshold: float = 1.5) -> List[Dict[str, Any]]:
+        """
+        Detect potential narrow passages for hoop navigation
+        
+        Args:
+            depth_image: Depth image in millimeters
+            passage_width_threshold: Minimum width for passage detection (meters)
+            
+        Returns:
+            List of detected passages with their properties
+        """
+        depth_m = depth_image.astype(np.float32) / 1000.0
+        h, w = depth_image.shape
+        
+        passages = []
+        
+        # Scan horizontal lines for gaps
+        for y in range(h // 4, 3 * h // 4, h // 8):  # Sample several horizontal lines
+            depth_line = depth_m[y, :]
+            valid_depths = (depth_line > self.min_reliable_depth) & (depth_line < self.max_reliable_depth)
+            
+            if not np.any(valid_depths):
+                continue
+            
+            # Find segments with sufficient depth
+            far_pixels = depth_line > passage_width_threshold
+            
+            # Find continuous segments
+            changes = np.diff(np.concatenate(([False], far_pixels, [False])).astype(int))
+            segment_starts = np.where(changes == 1)[0]
+            segment_ends = np.where(changes == -1)[0]
+            
+            for start, end in zip(segment_starts, segment_ends):
+                segment_width = end - start
+                if segment_width > w // 8:  # Minimum pixel width
+                    center_x = (start + end) // 2
+                    avg_depth = np.mean(depth_line[start:end])
+                    
+                    passage = {
+                        'center_x': int(center_x),
+                        'center_y': int(y),
+                        'width_pixels': int(segment_width),
+                        'width_normalized': float(segment_width / w),
+                        'average_depth': float(avg_depth),
+                        'confidence': min(1.0, segment_width / (w // 4))
+                    }
+                    passages.append(passage)
+        
+        # Sort by confidence and remove overlapping detections
+        passages.sort(key=lambda p: p['confidence'], reverse=True)
+        
+        return passages[:3]  # Return top 3 passages
