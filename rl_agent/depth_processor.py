@@ -171,7 +171,6 @@ class YOLO11HoopDetector:
             logger.error(f"Error calculating 3D position: {e}")
             return 1.0, (0.0, 0.0, 1.0)
     
-    # Mock or demo code is not allowed in production. No fallback detection is implemented.
     
     def process_detections_to_features(self, detections: List[HoopDetection], 
                                      target_hoop_id: int = 0) -> np.ndarray:

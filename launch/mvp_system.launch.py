@@ -148,8 +148,8 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'training_mode': training_mode,
-            'model_save_path': 'models/mvp_p3o_model.pt',
-            'training_config_file': 'config/mvp_training.json',
+            'model_save_path': 'trained_models/p3o/mvp_p3o_model.pt',
+            'training_config_file': 'config/training_config.yaml',
             'action_frequency': control_frequency
         }],
         remappings=[

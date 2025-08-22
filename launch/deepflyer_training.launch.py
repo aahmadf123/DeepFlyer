@@ -35,7 +35,7 @@ def generate_launch_description():
     
     model_path_arg = DeclareLaunchArgument(
         'model_path',
-        default_value='models/p3o_direct.pt',
+        default_value='trained_models/p3o/p3o_training.pt',
         description='Path to P3O model'
     )
     
@@ -52,19 +52,19 @@ def generate_launch_description():
     model_path = LaunchConfiguration('model_path')
     reward_preset = LaunchConfiguration('reward_preset')
     
-    # Direct Control Node (P3O Agent)
-    direct_control_node = Node(
+    # P3O RL Agent Node
+    rl_agent_node = Node(
         package='deepflyer',
-        executable='direct_control_node.py',
-        name='direct_control_node',
+        executable='rl_agent_node.py',
+        name='rl_agent_node',
         output='screen',
         parameters=[{
-            'control_frequency': 20.0,
             'training_mode': training_mode,
-            'model_path': model_path,
-            'use_safety': True,
-            'max_velocity': 2.0,
-            'max_yaw_rate': 1.0
+            'model_save_path': model_path,
+            'action_frequency': 20.0,
+            'enable_clearml': True,
+            'clearml_project': 'DeepFlyer Training',
+            'clearml_task': 'Hoop Navigation Training'
         }],
         remappings=[
             # PX4 topics
@@ -74,6 +74,7 @@ def generate_launch_description():
             ('/fmu/in/offboard_control_mode', '/fmu/in/offboard_control_mode'),
             # Vision topics
             ('/deepflyer/vision_features', '/deepflyer/vision_features'),
+            ('/deepflyer/course_state', '/deepflyer/course_state'),
             # Output topics
             ('/deepflyer/rl_action', '/deepflyer/rl_action'),
             ('/deepflyer/reward_feedback', '/deepflyer/reward_feedback')
@@ -209,7 +210,7 @@ def generate_launch_description():
         reward_preset_arg,
         
         # Nodes
-        direct_control_node,
+        rl_agent_node,
         vision_processor_node,
         px4_interface_node,
         reward_calculator_node,

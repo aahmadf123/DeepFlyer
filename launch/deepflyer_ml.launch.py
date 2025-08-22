@@ -54,13 +54,16 @@ def generate_launch_description():
         }]
     )
     
-    p3o_agent_node = Node(
+    rl_agent_node = Node(
         package='deepflyer_msgs',
-        executable='p3o_agent_node.py',
-        name='p3o_agent',
+        executable='rl_agent_node.py',
+        name='rl_agent',
         output='screen',
         parameters=[{
+            'training_mode': True,
             'enable_clearml': LaunchConfiguration('enable_clearml'),
+            'model_save_path': 'trained_models/p3o/ml_training_model.pt',
+            'action_frequency': 20.0
         }]
     )
     
@@ -108,13 +111,13 @@ def generate_launch_description():
         # Info
         LogInfo(msg="Starting DeepFlyer ML Components..."),
         LogInfo(msg="- Vision Processor (YOLO11)"),
-        LogInfo(msg="- P3O RL Agent"),
+        LogInfo(msg="- P3O RL Agent (rl_agent_node)"),
         LogInfo(msg="- Reward Calculator"),
         LogInfo(msg="- Course Manager"),
         
         # Nodes
         vision_processor_node,
-        p3o_agent_node,
+        rl_agent_node,
         reward_calculator_node,
         course_manager_node,
         trajectory_node

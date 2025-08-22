@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 
 # Import ML components
-from rl_agent.config import P3OConfig
+from rl_agent.algorithms.p3o import P3OConfig
 from rl_agent.utils import ClearMLTracker
 from rl_agent.algorithms.p3o import HyperparameterOptimizer
 

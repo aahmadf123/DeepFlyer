@@ -430,7 +430,7 @@ I'm creating six specialized ROS2 nodes for robust system separation:
 - **Function**: Handles training loops, experience replay, model checkpointing
 - **Algorithm**: Framework-agnostic RL infrastructure
 
-**3. P3O Agent Node** (`p3o_agent_node.py`)
+**3. P3O Agent Node** (`rl_agent_node.py`)
 - **Purpose**: P3O-specific algorithm implementation and control
 - **Subscribes to**: `/deepflyer/vision_features`, `/deepflyer/drone_state`, `/deepflyer/course_state` 
 - **Publishes to**: `/deepflyer/rl_action` (4D actions: vx, vy, vz, yaw_rate)

@@ -294,8 +294,7 @@ Production ROS2 nodes for system integration
 ```
 nodes/
 ├── vision_processor_node.py   # YOLO11 hoop detection + ZED Mini
-├── rl_agent_node.py           # General RL training infrastructure
-├── p3o_agent_node.py          # P3O algorithm + 8D→4D control
+├── rl_agent_node.py           # P3O algorithm + complete RL training
 ├── px4_interface_node.py      # PX4-ROS-COM + safety layer
 ├── reward_calculator_node.py  # Student-tunable reward computation
 └── course_manager_node.py     # MVP trajectory coordination
