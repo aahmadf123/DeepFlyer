@@ -37,11 +37,11 @@
 
 I handle the complete RL/AI/Vision pipeline - from raw camera input to trained flight policies. This includes computer vision processing, state representation, reward engineering, P3O training, and all the intelligent decision-making that makes the drone learn to navigate autonomously.
 
-## MVP Flight Trajectory
+## Flight Trajectory
 
-The Minimum Viable Product (MVP) implements a simplified flight path for educational demonstration:
+The system implements a simplified flight path for educational demonstration:
 
-### MVP Flight Sequence
+### Flight Sequence
 1. **Takeoff** from Point A to target altitude (0.8m)
 2. **360-degree yaw rotation** to scan and detect all visible hoops using ZED Mini + YOLO11
 3. **Navigate toward** the single detected hoop on one side
@@ -49,8 +49,8 @@ The Minimum Viable Product (MVP) implements a simplified flight path for educati
 5. **Turn around** after passing through to return through the same hoop from the other side
 6. **Land** at the original Point A
 
-### MVP vs Full System
-- **MVP:** Single hoop, round-trip passage, simplified navigation
+### Current Implementation
+- **Current:** Single hoop, round-trip passage, simplified navigation
 - **Full:** 5-hoop circuit, 3 laps, complex course navigation
 
 ## P3O Algorithm (Procrastinated Policy-based Observer)
@@ -62,7 +62,7 @@ P3O is a hybrid RL algorithm combining on-policy and off-policy updates for impr
 - **Blended Gradient Learning:** Combines gradients from on-policy (recent experience) and off-policy (replay buffer) sources  
 - **Entropy Regularization:** Encourages exploration by penalizing premature convergence
 
-### MVP Observation Space (8D)
+### Observation Space (8D)
 The agent receives a normalized vector representing the current state:
 ```python
 obs = [
@@ -77,7 +77,7 @@ obs = [
 ]
 ```
 
-### MVP Action Space (4D)
+### Action Space (4D)
 The agent outputs a 4-dimensional continuous action vector:
 ```python
 action = [vx_cmd, vy_cmd, vz_cmd, yaw_rate_cmd]
@@ -87,9 +87,9 @@ action = [vx_cmd, vy_cmd, vz_cmd, yaw_rate_cmd]
 # yaw_rate_cmd: Yaw rotation rate (rad/s)
 ```
 
-## MVP Reward Function (Student Tunable)
+## Reward Function (Student Tunable)
 
-The MVP reward function focuses on detection, alignment, and round-trip completion:
+The reward function focuses on detection, alignment, and round-trip completion:
 
 ### Positive Rewards (Student Tunable)
 | Event | Default Points | Range | Description |
@@ -118,7 +118,7 @@ Students specify training time in minutes via UI:
 ```
 Maps to total environment steps: `max_steps = steps_per_second * 60 * train_time_minutes`
 
-### MVP Hyperparameters (Random Search)
+### Hyperparameters (Random Search)
 | Parameter | Range | Description |
 |-----------|-------|-------------|
 | learning_rate | 1e-4 to 3e-3 | Step size for optimizer |
@@ -183,11 +183,11 @@ Using YOLO bounding box and depth image for precise hoop center detection:
 ### RL Training System
 | Topic | Type | Direction | Fields | Purpose |
 |-------|------|-----------|--------|---------|
-| `/deepflyer/rl_action` | Custom `RLAction.msg` | PUBLISH | `vx_cmd`, `vy_cmd`, `vz_cmd`, `yaw_rate_cmd` | MVP 4D actions (-1 to 1) |
+| `/deepflyer/rl_action` | Custom `RLAction.msg` | PUBLISH | `vx_cmd`, `vy_cmd`, `vz_cmd`, `yaw_rate_cmd` | 4D actions (-1 to 1) |
 | `/deepflyer/reward_feedback` | Custom `RewardFeedback.msg` | PUBLISH | See below | Reward breakdown |
 | `/deepflyer/course_state` | Custom `CourseState.msg` | SUBSCRIBE | See below | Course progress |
 
-**RLAction.msg Fields (MVP 4D Actions):**
+**RLAction.msg Fields (4D Actions):**
 - `vx_cmd` (float32) - forward/backward velocity (-1 to 1)
 - `vy_cmd` (float32) - left/right velocity (-1 to 1)
 - `vz_cmd` (float32) - up/down velocity (-1 to 1)
@@ -264,11 +264,11 @@ The node will run at 30Hz to balance processing load with real-time requirements
 
 ## P3O RL System (My Implementation)
 
-### P3O State Processing for MVP
-The MVP uses the 8D observation space detailed above, with all values normalized to ensure stable learning. The P3O algorithm processes these features to make flight decisions for the single-hoop round-trip navigation task.
+### P3O State Processing
+The system uses the 8D observation space detailed above, with all values normalized to ensure stable learning. The P3O algorithm processes these features to make flight decisions for the single-hoop round-trip navigation task.
 
 ### Action Space Design
-I'm using the continuous 4D action space detailed above that gives the drone fine-grained control while remaining intuitive for the MVP round-trip navigation.
+I'm using the continuous 4D action space detailed above that gives the drone fine-grained control while remaining intuitive for the round-trip navigation.
 
 **Action Translation Logic:**
 - Actions are smoothed to prevent jerky movements that could destabilize the drone
@@ -292,7 +292,7 @@ I'm implementing P3O with specific adaptations for drone navigation challenges:
 - Value function and policy networks are separate to prevent interference
 - Gradient clipping at 0.5 to prevent training instability from outlier episodes
 
-## MVP Course Setup
+## Course Setup
 
 ### Physical Setup
 - **Course Size**: 2.1m × 1.6m flight area 
@@ -452,9 +452,9 @@ I'm creating six specialized ROS2 nodes for robust system separation:
 - **Configuration**: YAML-based reward parameters that students can modify
 
 **6. Course Manager Node** (`course_manager_node.py`)
-- **Purpose**: MVP trajectory state management and episode coordination
+- **Purpose**: Trajectory state management and episode coordination
 - **Subscribes to**: Drone position, vision features, flight status
-- **Publishes to**: `/deepflyer/course_state` (MVP flight phases)
+- **Publishes to**: `/deepflyer/course_state` (flight phases)
 - **Function**: Phase tracking (takeoff→scan→approach→through→return→land), episode reset
 - **Navigation**: Single-hoop round-trip coordination
 

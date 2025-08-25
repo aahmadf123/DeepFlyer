@@ -1,12 +1,12 @@
 # CourseState.msg
-# MVP trajectory state and progress tracking
+# Flight trajectory state and progress tracking
 # Single hoop navigation: takeoff → scan → through hoop → return → land
 
 # Header for timestamp and frame coordination
 std_msgs/Header header
 
-# MVP Flight Phase Information
-string current_phase               # Current MVP phase: TAKEOFF, SCAN_360, NAVIGATE_TO_HOOP, etc.
+# Flight Phase Information
+string current_phase               # Current phase: TAKEOFF, SCAN_360, NAVIGATE_TO_HOOP, etc.
 float32 phase_progress            # Progress through current phase [0.0 - 1.0]
 float32 phase_duration            # Time spent in current phase (seconds)
 float32 total_flight_time         # Total time since takeoff (seconds)
@@ -24,7 +24,7 @@ float32 distance_to_hoop          # Distance to target hoop (meters)
 float32 distance_to_origin        # Distance back to Point A (meters)
 float32 altitude                  # Current altitude (meters)
 
-# MVP Trajectory Progress
+# Trajectory Progress
 bool takeoff_completed            # Reached target altitude
 bool scan_completed               # Completed 360° scan
 bool hoop_found                   # Hoop detected during scan
@@ -32,7 +32,7 @@ bool first_passage_completed      # First passage through hoop
 bool return_passage_completed     # Return passage through hoop  
 bool returned_to_origin           # Back to Point A
 bool landing_completed            # Successfully landed
-bool trajectory_completed         # Full MVP trajectory complete
+bool trajectory_completed         # Full trajectory complete
 
 # Episode Management
 int32 episode_id                  # Current episode number

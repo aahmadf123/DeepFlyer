@@ -48,7 +48,7 @@ Key integration points:
 ### Technical Implementation Details
 **📚 [Complete Technical Reference →](TEAM_OVERVIEW.md)**
 
-Detailed documentation of the complete ML/RL implementation including MVP trajectory, P3O algorithm, observation/action spaces, and reward functions.
+Detailed documentation of the complete ML/RL implementation including trajectory, P3O algorithm, observation/action spaces, and reward functions.
 
 ## Quick Reference
 
@@ -91,7 +91,7 @@ rl_agent/rewards/rewards.py # DeepRacer-style reward function
 ```
 nodes/rl_agent_node.py      # RL agent ROS2 node
 nodes/px4_interface_node.py # PX4-ROS-COM interface
-rl_agent/mvp_trajectory.py  # Flight phases
+rl_agent/trajectory.py  # Flight phases
 nodes/vision_processor_node.py # YOLO11 processing
 ```
 

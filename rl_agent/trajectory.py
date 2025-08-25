@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TrajectoryConfig:
-    """Configuration for MVP trajectory execution"""
+    """Configuration for trajectory execution"""
     
     # Takeoff parameters
     takeoff_altitude: float = 1.5       # meters
@@ -86,7 +86,7 @@ class FlightPhase(Enum):
 
 
 class PhaseController:
-    """Controller for managing MVP flight phases"""
+    """Controller for managing flight phases"""
     
     def __init__(self, config: TrajectoryConfig):
         self.config = config
@@ -106,7 +106,7 @@ class PhaseController:
         self.best_scan_yaw: Optional[float] = None
         self.desired_target_altitude: Optional[float] = None
         
-        logger.info("MVP Phase Controller initialized")
+        logger.info("Phase Controller initialized")
     
     def update_phase(self, observation: np.ndarray, drone_state: Dict[str, Any]) -> FlightPhase:
         """
@@ -219,7 +219,7 @@ class PhaseController:
         elif self.phase == FlightPhase.LANDING:
             if altitude < self.config.landing_threshold:
                 self._transition_to_phase(FlightPhase.COMPLETED)
-                logger.info("Landing complete! MVP trajectory finished")
+                logger.info("Landing complete! Trajectory finished")
         
         return self.phase
     
@@ -277,7 +277,7 @@ class PhaseController:
 
 
 class ActionGenerator:
-    """Generates actions for each phase of the MVP trajectory"""
+    """Generates actions for each phase of the trajectory"""
     
     def __init__(self, config: TrajectoryConfig):
         self.config = config

@@ -1,5 +1,5 @@
 # VisionFeatures.msg
-# Vision processing output for MVP hoop navigation
+# Vision processing output for hoop navigation
 # Compatible with 8D observation space
 
 # Header for timestamp and frame info

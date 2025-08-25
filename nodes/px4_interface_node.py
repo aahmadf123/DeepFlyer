@@ -87,7 +87,7 @@ class FlightSafetyLimits:
 
 class PX4InterfaceNode(Node):
     """
-    ROS2 node for PX4-ROS-COM communication with MVP trajectory control
+    ROS2 node for PX4-ROS-COM communication with trajectory control
     """
     
     def __init__(self):
@@ -106,7 +106,7 @@ class PX4InterfaceNode(Node):
         self.auto_arm = self.get_parameter('auto_arm').get_parameter_value().bool_value
         
         # Initialize safety limits
-        self.safety_limits = MVPSafetyLimits()
+        self.safety_limits = FlightSafetyLimits()
         
         # Flight state
         self.is_armed = False
@@ -117,8 +117,8 @@ class PX4InterfaceNode(Node):
         self.current_velocity: Optional[np.ndarray] = None
         self.current_yaw = 0.0
         
-        # MVP trajectory state
-        self.current_phase = MVPFlightPhase.TAKEOFF
+        # Flight trajectory state
+        self.current_phase = FlightPhase.TAKEOFF
         self.phase_start_time = time.time()
         self.flight_start_time = time.time()
         self.hoop_passages = 0
@@ -248,14 +248,14 @@ class PX4InterfaceNode(Node):
             self.start_episode()
     
     def start_episode(self):
-        """Start a new MVP episode"""
+        """Start a new episode"""
         self.episode_active = True
-        self.current_phase = MVPFlightPhase.TAKEOFF
+        self.current_phase = FlightPhase.TAKEOFF
         self.phase_start_time = time.time()
         self.flight_start_time = time.time()
         self.hoop_passages = 0
         
-        self.get_logger().info("Starting new MVP episode")
+        self.get_logger().info("Starting new episode")
         
         # Arm and switch to offboard if enabled
         if self.auto_arm and not self.is_armed:
@@ -275,8 +275,8 @@ class PX4InterfaceNode(Node):
         # Process RL action
         self.process_rl_action(self.latest_rl_action)
         
-        # Update MVP trajectory phase
-        self.update_mvp_phase()
+        # Update trajectory phase
+        self.update_trajectory_phase()
         
         self.command_count += 1
     
@@ -401,8 +401,8 @@ class PX4InterfaceNode(Node):
         self.vehicle_command_pub.publish(msg)
         self.get_logger().info("Disarm command sent")
     
-    def update_mvp_phase(self):
-        """Update MVP flight phase based on current state"""
+    def update_trajectory_phase(self):
+        """Update flight phase based on current state"""
         if self.current_position is None:
             return
         
@@ -410,9 +410,9 @@ class PX4InterfaceNode(Node):
         altitude = self.current_position[2]
         
         # Simple phase progression logic
-        if self.current_phase == MVPFlightPhase.TAKEOFF:
+        if self.current_phase == FlightPhase.TAKEOFF:
             if altitude >= self.takeoff_altitude - 0.2:
-                self.current_phase = MVPFlightPhase.SCAN_360
+                self.current_phase = FlightPhase.SCAN_360
                 self.phase_start_time = current_time
                 self.get_logger().info("Phase: TAKEOFF -> SCAN_360")
         
@@ -420,13 +420,13 @@ class PX4InterfaceNode(Node):
         # or vision system based on hoop detection and navigation progress
     
     def publish_course_state(self):
-        """Publish MVP course state information"""
+        """Publish course state information"""
         msg = CourseState()
         msg.header = Header()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "map"
         
-        # MVP Flight Phase Information
+        # Flight Phase Information
         msg.current_phase = self.current_phase.value
         phase_duration = time.time() - self.phase_start_time
         msg.phase_duration = phase_duration

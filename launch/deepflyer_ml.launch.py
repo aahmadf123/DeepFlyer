@@ -16,13 +16,13 @@ def generate_launch_description():
     # Launch arguments
     custom_model_path_arg = DeclareLaunchArgument(
         'custom_model_path',
-        default_value='weights/best.pt',
+        default_value='trained_models/yolo/best.pt',
         description='Path to custom trained YOLO model'
     )
     
     yolo_model_size_arg = DeclareLaunchArgument(
         'yolo_model_size', 
-        default_value='n',
+        default_value='m',
         description='YOLO model size (n, s, m, l, x)'
     )
     

@@ -28,7 +28,7 @@ nodes/vision_processor_node.py # YOLO11 vision processing
 ### Configuration Files
 ```
 rl_agent/config.py          # All system configuration (course, P3O, vision, PX4)
-rl_agent/mvp_trajectory.py  # Flight phases and trajectory logic
+rl_agent/trajectory.py  # Flight phases and trajectory logic
 ```
 
 ## ROS Topic Interface Specifications
@@ -149,7 +149,7 @@ Required environment features:
 - Physics appropriate for 0.8m diameter hoops
 
 ### 2. ROS2 Launch File Structure
-**Reference:** `launch/deepflyer_ml.launch.py` and `launch/mvp_system.launch.py`
+**Reference:** `launch/deepflyer_ml.launch.py` and `launch/system.launch.py`
 
 Complete system launch sequence:
 ```bash
@@ -184,9 +184,9 @@ Required PX4 simulation features:
 
 ## Flight Phase System (For Course Logic)
 
-### MVP Flight Phases (from `rl_agent/mvp_trajectory.py`)
+### Flight Phases (from `rl_agent/trajectory.py`)
 ```python
-class MVPFlightPhase(Enum):
+class FlightPhase(Enum):
     TAKEOFF = "takeoff"           # Initial ascent to 0.8m
     SCAN_360 = "scan_360"         # Look for first hoop 
     NAVIGATE_TO_HOOP = "navigate" # Fly toward detected hoop

@@ -108,7 +108,7 @@ source install/setup.bash
 ### Launch the System
 ```bash
 # Terminal 1: Launch all ML components
-ros2 launch deepflyer mvp_system.launch.py
+ros2 launch deepflyer system.launch.py
 
 # Terminal 2: Monitor training progress
 ros2 topic echo /deepflyer/reward_feedback
@@ -297,7 +297,7 @@ nodes/
 ├── rl_agent_node.py           # P3O algorithm + complete RL training
 ├── px4_interface_node.py      # PX4-ROS-COM + safety layer
 ├── reward_calculator_node.py  # Student-tunable reward computation
-└── course_manager_node.py     # MVP trajectory coordination
+└── course_manager_node.py     # Trajectory coordination
 ```
 
 #### `msg/` - ROS2 Message Definitions
@@ -345,7 +345,7 @@ tests/
 ```
 launch/
 ├── deepflyer_ml.launch.py     # ML training system launch
-└── mvp_system.launch.py       # MVP demonstration launch
+└── system.launch.py            # System demonstration launch
 ```
 
 #### 📚 `docs/` - Technical Documentation  
